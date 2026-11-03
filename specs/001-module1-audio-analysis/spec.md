@@ -122,7 +122,7 @@ En tant que DJ, je quitte le Module 1 en vidant le cache audio, ou j'exporte dir
 - Le seuil de décision GO / NO-GO est de 60 % et le pitch shift maximal conseillé de ±3 demi-tons, conformément à la règle métier de référence du projet.
 - Les formats d'entrée supportés sont MP3 et WAV ; les fichiers sans métadonnées ID3 restent analysables en DSP.
 - L'interface est en français et respecte le thème Venetian Steampunk Dark DAW.
-- Les prototypes Python du dossier `protoype/` (id3-parser, bpm-engine, camelot-gatekeeper) servent de référence comportementale pour les scénarios GO / NO-GO / robustesse.
+- Les prototypes Python initiaux (dossier `protoype/`, supprimé le 2026-11-03) ont servi de référence comportementale ; la référence désormais est la suite Vitest et la matrice Camelot de `frontend/src/lib/camelot.js`.
 
 ## Traçabilité FR → code (état au 2026-11-03)
 

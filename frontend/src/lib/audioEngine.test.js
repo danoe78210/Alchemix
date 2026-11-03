@@ -27,6 +27,13 @@ function clickTrack(bpm, seconds = 8, sr = 44100) {
 	return makeBuffer(pcm, sr);
 }
 
+/** Vérifie le contrat de detectKey : { code (1A–12B), keyName, confidence } dont la tonique est `root`. */
+function expectKeyWithTonic(res, root) {
+	expect(res).not.toBeNull();
+	expect(res.code).toMatch(/^([1-9]|1[0-2])[AB]$/);
+	expect(res.keyName.startsWith(root)).toBe(true);
+}
+
 /** Accord (plusieurs sinusoïdes) — fondamentale de basse + triade pour detectKey. */
 function chord(freqs, seconds = 2, sr = 44100) {
 	const n = Math.floor(seconds * sr);
@@ -294,27 +301,21 @@ describe('audioEngine — Formules Mathématiques DSP (Section 5 du Rapport)', (
 
 	test('chromagramme FFT N=8192: résolution spectrale ~5.4 Hz pour séparer demi-tons graves', () => {
 		// FFT sur 44.1 kHz / 8192 points = 44100 / 8192 ≈ 5.4 Hz résolution
-		// Vérifier que detectKey() retourne une clé ou null pour un accord simple
-		const buf = chord([65, 82, 98], 1);
-		const res = detectKey(buf);
-		// Résultat peut être string ou null, mais ne doit pas lever d'exception
-		expect([typeof res === 'string', res === null].some(x => x)).toBe(true);
+		// Accord de Do majeur (C2 E2 G2) : la tonique attendue est Do
+		const res = detectKey(chord([65, 82, 98], 1));
+		expectKeyWithTonic(res, 'C');
 	});
 
 	test('surpondération graves (MIDI 36-47, ×1.6): poids élevé pour fondamentale basse', () => {
-		// Do grave (65 Hz MIDI ~36) + Do aigu (260 Hz MIDI ~60)
-		// Avec surpondération ×1.6 sur 36-47, la fondamentale dominerait
-		const buf = chord([65, 260], 2);
-		const res = detectKey(buf);
-		expect([typeof res === 'string', res === null].some(x => x)).toBe(true);
+		// Do grave (65 Hz MIDI ~36) + Do aigu (260 Hz MIDI ~60) : la tonique reste Do
+		const res = detectKey(chord([65, 260], 2));
+		expectKeyWithTonic(res, 'C');
 	});
 
 	test('filtrage passe-bas RBJ < 180 Hz: atténue aigus, conserve basse', () => {
-		// Accord grave: fondamentale < 180 Hz (passes) + harmonique > 180 Hz (atténuée)
-		const buf = chord([65, 130, 260], 2);
-		const res = detectKey(buf);
-		// Doit favoriser la détection sur la basse, résultat valide ou null
-		expect([typeof res === 'string', res === null].some(x => x)).toBe(true);
+		// Accord grave: fondamentale < 180 Hz (passes) + harmoniques > 180 Hz (atténuées)
+		const res = detectKey(chord([65, 130, 260], 2));
+		expectKeyWithTonic(res, 'C');
 	});
 
 	test('formule Time-Stretch: (BPM_A / BPM_B - 1) * 100', () => {
@@ -323,7 +324,7 @@ describe('audioEngine — Formules Mathématiques DSP (Section 5 du Rapport)', (
 		const bpm_a = 120;
 		const bpm_b = 100;
 		const timeStretch = ((bpm_a / bpm_b) - 1) * 100;
-		expect(timeStretch).toBe(20);
+		expect(timeStretch).toBeCloseTo(20, 10);
 		// Vérifier que |TimeStretch| > 15% afficherait l'alerte WARP HAZARD
 		expect(Math.abs(timeStretch)).toBeGreaterThan(15);
 	});

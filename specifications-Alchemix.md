@@ -10,7 +10,7 @@
 **AlcheMix Studio** est une Station de Travail Audio Numérique (DAW) de haut niveau dédiée aux DJ Mashups, au remixage harmonique et à la création musicale assistée par intelligence artificielle.
 
 * **Dossier racine du projet** : `C:\Dev\Alchemix\`
-* **Dossier des prototypes Python** : `C:\Dev\Alchemix\protoype\`
+* **Prototypes Python** : supprimés du dépôt (2026-11-03), après la phase de démarrage du projet.
 * **Dossier des notifications sonores TTS** : `C:\Dev\Alchemix\tts\`
 * **Thème visuel** : *Venetian Steampunk Dark DAW* (fond sombre ardoise `#121316`, bordures cuivrées biseautées `#5A3826`, affichages LED ambre `#FFB300` / émeraude `#00E676`, formes d'ondes tricolores WebGPU).
 
@@ -218,13 +218,13 @@
  — `frontend/src/app.css` (tokens `@theme` : couleurs, espacements, typographies de la maquette), `frontend/index.html` (polices DM Sans / JetBrains Mono / Space Grotesk), `HeaderBar.svelte` (navigation des 4 modules, badge MK-IV, bouton QUITTER & NETTOYER LE CACHE à voyant rubis ; les indicateurs FREQ / DEPTH / GPU ont été retirés), `CassetteDeck.svelte`, `TempoDisplay.svelte` (BPM + clé Camelot, variante ambre/émeraude), `ID3TagCard.svelte`, `CamelotCompatibility.svelte` (verdict GO/NO-GO, WARP HAZARD, bascule RELATIF), `CamelotWheel.svelte` (SVG fluide dans son conteneur), `views/Module1View.svelte` (3 colonnes : Deck A / centre Camelot + beatgrid / Deck B + Gatekeeper, footer châssis).
   * **Lecture des cassettes (PLAY / STOP)** : `frontend/src/lib/services/deckPlayer.js` (`createDeckPlayer`) charge le fichier choisi dans un `HTMLAudioElement` via une URL d'objet (libérée à l'éjection et au démontage). PLAY lance la lecture et fait tourner les bobines (`isPlaying`) ; STOP met en pause, revient au début et arrête les bobines ; la fin du morceau remet l'état à l'arrêt. Pendant la lecture, `onProgress` remonte la progression `currentTime / duration` (événement `timeupdate`) ; `CassetteDeck` en déduit le rayon des paquets de bande (aire proportionnelle à la longueur restante) : la bobine gauche se vide, la droite se remplit (`cassette-tape-disc` / `cassette-tape-disc-take-up`), sans transition au-delà de 250 ms. Chaque deck a son propre lecteur. Le corps de cassette (`cassette-body`) suit le ratio réel d'une cassette audio, 1,587:1 (largeur 100 : hauteur 63), via `aspect-ratio` et la constante `CASSETTE_RATIO` de `CassetteDeck.svelte`. Une fois un titre chargé, la façade réaliste apparaît (coquille transparente SVG avec vis et pions rouges, disque de bande noir, deux moyeux à 12 repères blancs, ambre pour le deck A et émeraude pour le deck B (charte des decks), qui tournent pendant l'analyse ou la lecture) ; sans cassette, la façade est éteinte à 35 % d'opacité. Une pochette de papier (`data-testid="cassette-sleeve"`) couvre la partie haute de la bande, avec la lettre de face (A pour le deck A, B pour le deck B) et le titre du morceau (`deck-track-name`, police `font-sleeve` = IM Fell English, antiqua gravée du XVIIᵉ siècle, token dans `app.css`) ; elle remplace le défilement de la bande. La bande néon au-dessus n'affiche plus que « CASSETTE CHARGÉE ». Dans chaque colonne latérale, l'ordre est : cassette, carte ID3 (`ID3TagCard`), `TempoDisplay`, puis le bouton « DÉMIXER PISTE A/B ➔ MODULE 2 » (`track-action-btn`, rendu par la vue et plus par `ID3TagCard`). Le bandeau BITRATE / DEPTH / FORMAT a été supprimé : ses informations sont dans la fiche technique de la carte ID3. `frontend/src/lib/bitDepth.js` (profondeur WAV / FLAC) n'est plus affiché ; il reste disponible sans être utilisé.
   * **Tests** : `frontend/test/CassetteDeck.test.js` (+5 : PLAY/STOP, états désactivés, rotation pendant la lecture), `frontend/src/lib/services/deckPlayer.test.js` (8), `frontend/src/lib/views/Module1View.playback.test.js` (5 : PLAY/STOP sur les decks A et B, indépendance du deck B). `HeaderBar.test.js` vérifie désormais l'absence des indicateurs retirés.
-  * **Limites connues** : les 4 tests DSP de `audioEngine.test.js` échouaient avant ces changements et ne sont pas corrigés ici. La vérification visuelle dans le navigateur n'a pas été effectuée (serveur de dev non relancé). Le bouton PLAY ne gère pas encore de position de lecture ni de boucle.
+  * **Limites connues** : aucune sur les tests unitaires (suite verte). La vérification visuelle dans le navigateur n'a pas été effectuée (serveur de dev non relancé). Le bouton PLAY ne gère pas encore de position de lecture ni de boucle.
 
 * **Session 2026-11-03 — dérive documentaire, worker DSP, orphelins** :
   * **Worker DSP branché (FR-011)** : `Module1View.loadTrack` appelle `detectBPMKey` au lieu de `detectBPM`/`detectKey`. `audioEngine.js` expose `analyzeTempoKey(audioBuffer)` (partagé entre le worker et le repli synchrone). `detectBPMKey` renvoie `{ bpm, confidence, regularity, key }`. Le PCM est copié avant transfert : auparavant, le transfert détachait les canaux de l'`AudioBuffer`, ce qui cassait `measureLoudness` et `detectBitrate`.
   * **Composants orphelins retirés** : `TitleCard.svelte`, `D3TagCard.svelte`, `components/Module1View.svelte` et `components/MetadataModal.svelt.svelte` (aucun import ; non suivis par Git, sauvegardés dans `C:\Users\danao\alchemix-orphelins-2026-11-03\`). La modale active est `components/MetadataModal.svelte`.
   * **Export vers Module 2 — non implémenté** : `handleSendToModule2` (`Module1View.svelte`) ne fait qu'un `console.info`. FR-010 n'est donc pas satisfait ; la mention « câblé à `sendTrackToModule2` » de la tâche T013 est erronée.
-  * **Tests** : `npm test` → **15 fichiers / 133 tests, 129 verts, 4 échecs** (les 4 tests DSP de `audioEngine.test.js` signalés plus haut). 3 tests ajoutés : buffer non détaché, `confidence`/`regularity` via le worker, protocole de `audioWorker.js`. Le build `npm run build` n'a pas été lancé (tâche T016, réservée à l'utilisateur).
+  * **Tests** : `npm test` → **15 fichiers / 133 tests, 100 % verts** (après correction de 4 tests DSP obsolètes de `audioEngine.test.js` : assertions de type `string` remplacées par le contrat `{ code, keyName, confidence }` et tolérance de flottant sur le time-stretch). 3 tests ajoutés : buffer non détaché, `confidence`/`regularity` via le worker, protocole de `audioWorker.js`. Le build `npm run build` n'a pas été lancé (tâche T016, réservée à l'utilisateur).
   * **Corrections documentaires** : Tailwind 4.3.3 est installé (`package.json`, `@import "tailwindcss"` dans `app.css`). Les mentions « Tailwind n'étant pas installé / absent du dépôt » des entrées v8.9 à v8.11 sont donc obsolètes. Les polices sont déclarées dans `frontend/src/app.css` et non dans `index.html`.
 
 ### 4.3 Système de Notifications Sonores (TTS)
@@ -285,14 +285,7 @@ npm run build
 
 ### 6.2 Prototypes Python
 
-> ⚠️ Le dossier `protoype/` est **absent du dépôt** (constat du 2026-11-03). Les commandes ci-dessous ne peuvent pas s'exécuter tant qu'il n'est pas restauré.
-```powershell
-# Moteur complet Module 1
-python C:\Dev\Alchemix\protoype\module1-alchemix-analyzer-v2.py "C:\Dev\Alchemix\protoype"
-
-# Simulateur Moteur Module 2 (Démixage IA Stems)
-python C:\Dev\Alchemix\protoype\module2-stem-engine.py
-```
+Supprimés du dépôt le 2026-11-03 : le dossier `protoype/` n'existe plus. La vérification automatisée repose désormais sur `npm test` (§6.1).
 
 ### 6.3 Directives d'Optimisation de Tokens pour Claude Code
 1. **Règle du Périmètre Strict** : Interdiction d'effectuer des recherches de fichiers globales (`grep` ou `find` larges). Cibler directement les fichiers nécessaires.

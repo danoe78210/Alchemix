@@ -12,7 +12,7 @@ describe('CassetteDeck — lecteur de cassettes steampunk (Deck A / Deck B)', ()
 
 	test('affiche le nom du morceau quand file est renseigné', () => {
 		render(CassetteDeck, {
-			props: { ...baseProps, file: 'C:/Dev/Alchemix/protoype/ACDC - Back In Black.mp3' },
+			props: { ...baseProps, file: 'C:/Dev/Alchemix/tracks/ACDC - Back In Black.mp3' },
 		});
 		expect(screen.getByText('ACDC - Back In Black')).toBeInTheDOM();
 		expect(screen.queryByText('INSÉRER CASSETTE')).toBeNull();
