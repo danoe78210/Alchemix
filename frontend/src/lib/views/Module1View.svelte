@@ -1,0 +1,558 @@
+<script lang="ts">
+  /**
+   * AlcheMix Studio — Module 1 : Vue principale complète (maquette MK-IV)
+   * Disposition 3 colonnes : Deck A Master (ambre) / Harmonic Engine & Camelot
+   * Wheel (centre) / Deck B Candidate & Gatekeeper (émeraude).
+   */
+  import HeaderBar from '../components/HeaderBar.svelte';
+  import CassetteDeck from '../components/CassetteDeck.svelte';
+  import ID3TagCard from '../components/ID3TagCard.svelte';
+  import TempoDisplay from '../components/TempoDisplay.svelte';
+  import CamelotWheel from '../components/CamelotWheel.svelte';
+  import CamelotCompatibility from '../components/CamelotCompatibility.svelte';
+  import MetadataModal from '../components/MetadataModal.svelte';
+  import BeatgridOverlay from '../components/BeatgridOverlay.svelte';
+  import { parseID3Tags, detectBPMKey, detectBitrate, resetAudioEngine, resolveTempo } from '../audioEngine.js';
+  import { compatibilityBetween, keyInfo } from '../camelot.js';
+  import { measureLoudness } from '../loudness.js';
+  import { createDeckPlayer } from '../services/deckPlayer.js';
+  import { onDestroy } from 'svelte';
+
+  interface Track {
+    id: 'A' | 'B';
+    file: File | string | null;
+    title: string | null;
+    artist: string | null;
+    bpm: number | null;
+    key: string | null;
+    coverUrl: string | null;
+    metadata: Record<string, any>;
+    isAnalyzing: boolean;
+    isPlaying: boolean;
+    progress: number;
+    isFetchingOnline: boolean;
+    tempoConfidence: number | null;
+    tempoRegularity: number | null;
+  }
+
+  function emptyTrack(id: 'A' | 'B'): Track {
+    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null };
+  }
+
+  let trackA = $state<Track>(emptyTrack('A'));
+  let trackB = $state<Track>(emptyTrack('B'));
+
+  const playerA = createDeckPlayer({
+    onPlayingChange: (playing) => (trackA.isPlaying = playing),
+    onProgress: (fraction) => (trackA.progress = fraction)
+  });
+  const playerB = createDeckPlayer({
+    onPlayingChange: (playing) => (trackB.isPlaying = playing),
+    onProgress: (fraction) => (trackB.progress = fraction)
+  });
+
+  onDestroy(() => {
+    playerA.dispose();
+    playerB.dispose();
+  });
+
+
+  let showModal = $state(false);
+  let pendingDeckId = $state<'A' | 'B' | null>(null);
+  let analysisDone = $state(false);
+  let fileInputA = <HTMLInputElement | null>(null);
+  let fileInputB = <HTMLInputElement | null>(null);
+
+  const countLoaded = $derived((trackA.file ? 1 : 0) + (trackB.file ? 1 : 0));
+  const isBothLoaded = $derived(countLoaded === 2);
+
+  // Matrice de consonance Camelot (camelot.js) : SAME_KEY 100 / RELATIVE 95 /
+  // QUINTE 90 / ENERGY_BOOST 80 / MODULATION 75 / DISSONANT 55 (NO-GO < 60)
+  const compat = $derived.by(() => {
+    if (!trackA.key || !trackB.key) return null;
+    return compatibilityBetween(trackA.key, trackB.key);
+  });
+
+  const compatibilityScore = $derived(countLoaded < 2 || !compat ? 0 : compat.score);
+  const gatekeeper = $derived(countLoaded === 2 && compat?.status === 'GATE_UNLOCKED' ? 'GO' : 'NO-GO');
+  const ruleApplied = $derived(countLoaded < 2 || !compat ? 'STANDBY — ANALYSE EN ATTENTE' : compat.rule);
+
+  const timeStretchPercent = $derived.by(() => {
+    if (!trackA.bpm || !trackB.bpm) return 0;
+    return (trackA.bpm / trackB.bpm - 1) * 100;
+  });
+
+  function triggerLoadTrack(deckId: 'A' | 'B') {
+    if (deckId === 'A') {
+      if (fileInputA) fileInputA.value = '';
+      fileInputA?.click();
+    } else {
+      if (fileInputB) fileInputB.value = '';
+      fileInputB?.click();
+    }
+  }
+
+  async function handleFileSelected(event: Event, deckId: 'A' | 'B') {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const track = deckId === 'A' ? trackA : trackB;
+    track.file = file;
+    track.isAnalyzing = true;
+    (deckId === 'A' ? playerA : playerB).load(file);
+    analysisDone = false;
+
+    const cleanName = file.name.replace(/\.[^/.]+$/, '');
+    const parts = cleanName.split(/\s*-\s*/);
+
+    let parsedArtist = 'Artiste Inconnu';
+    let parsedTitle = cleanName;
+    if (parts.length >= 2) {
+      parsedArtist = parts[0].trim();
+      parsedTitle = parts.slice(1).join(' - ').trim();
+    }
+
+    track.artist = parsedArtist;
+    track.title = parsedTitle;
+
+    // Enrichissement en ligne (iTunes Search) en arrière-plan, quel que soit
+    // le résultat de l'analyse locale — seuls les champs manquants sont complétés.
+    track.isFetchingOnline = true;
+    fetchOnlineMetadata(parsedArtist, parsedTitle)
+      .then((online) => {
+        track.isFetchingOnline = false;
+        // $state proxifie l'objet File : comparaison par nom, pas par référence
+        const current = track.file as File | null;
+        if (!current || current.name !== file.name) return; // piste éjectée/remplacée
+        if (online.coverUrl && !track.coverUrl) track.coverUrl = online.coverUrl;
+        if (online.genre && !track.metadata.genre) track.metadata.genre = online.genre;
+        if (online.album && !track.metadata.album) track.metadata.album = online.album;
+        if (online.year && !track.metadata.year) track.metadata.year = online.year;
+      })
+      .catch(() => {
+        track.isFetchingOnline = false;
+        // Hors-ligne / API indisponible : l'UI reste fonctionnelle
+      });
+
+    try {
+      // Phase 1 : tags ID3 locaux
+      const arrayBuffer = await file.arrayBuffer();
+      const id3Tags = parseID3Tags(arrayBuffer) || {};
+
+      track.metadata = {
+        ...track.metadata,
+        title: id3Tags.title || parsedTitle,
+        artist: id3Tags.artist || parsedArtist,
+        album: id3Tags.album || track.metadata.album,
+        year: id3Tags.year || track.metadata.year,
+        genre: id3Tags.genre || track.metadata.genre
+      };
+      track.title = track.metadata.title;
+      track.artist = track.metadata.artist;
+
+      // Phase 2 : décodage Web Audio + DSP de secours si BPM/clé manquants
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioCtx();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+      const dsp = await detectBPMKey(audioBuffer);
+      const measured = dsp.bpm === null ? null : { bpm: dsp.bpm, confidence: dsp.confidence, regularity: dsp.regularity };
+      const tempo = resolveTempo(id3Tags.bpm ?? null, measured);
+      track.bpm = tempo?.bpm ?? null;
+      track.tempoConfidence = tempo?.source === 'measure' ? measured.confidence : null;
+      track.tempoRegularity = tempo?.source === 'measure' ? measured.regularity : null;
+      track.key = id3Tags.key || dsp.key || null;
+
+      track.metadata.bitrate = await detectBitrate(file, audioBuffer);
+      track.metadata.sample_rate = audioBuffer.sampleRate;
+      track.metadata.channels = audioBuffer.numberOfChannels;
+      track.metadata.duration = audioBuffer.duration;
+      track.metadata.loudness = measureLoudness(audioBuffer);
+      audioContext.close?.();
+
+      // BPM ou clé toujours indéterminés -> saisie manuelle du DJ
+      if (!track.bpm || !track.key) {
+        pendingDeckId = deckId;
+        showModal = true;
+      }
+      track.isAnalyzing = false;
+    } catch (error) {
+      console.warn("Analyse locale indisponible, saisie manuelle requise :", error);
+      pendingDeckId = deckId;
+      showModal = true;
+      track.isAnalyzing = false;
+    }
+  }
+
+  async function fetchOnlineMetadata(artist: string, title: string) {
+    try {
+      const term = encodeURIComponent(`${artist} ${title}`);
+      const res = await fetch(`https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=1`);
+      const json = await res.json();
+      if (json?.results && json.results.length > 0) {
+        const item = json.results[0];
+        return {
+          coverUrl: item.artworkUrl100 ? item.artworkUrl100.replace(/100x100(bb|wa)\.jpg/, '600x600bb.jpg') : null,
+          genre: item.primaryGenreName || null,
+          album: item.collectionName || null,
+          year: item.releaseDate ? item.releaseDate.substring(0, 4) : null
+        };
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  }
+
+  function handleEjectTrack(deckId: 'A' | 'B') {
+    if (deckId === 'A') {
+      playerA.dispose();
+      trackA = emptyTrack('A');
+      if (fileInputA) fileInputA.value = '';
+    } else {
+      playerB.dispose();
+      trackB = emptyTrack('B');
+      if (fileInputB) fileInputB.value = '';
+    }
+    if (pendingDeckId === deckId) {
+      showModal = false;
+      pendingDeckId = null;
+    }
+    analysisDone = false;
+  }
+
+  function handleModalSave(data: { bpm: number; key: string; title?: string; artist?: string }) {
+    if (!pendingDeckId) return;
+    const track = pendingDeckId === 'A' ? trackA : trackB;
+    track.bpm = data.bpm;
+    track.key = data.key;
+    if (data.title) track.title = data.title;
+    if (data.artist) track.artist = data.artist;
+    track.metadata = { ...track.metadata, bpm: data.bpm, key: data.key };
+    track.isAnalyzing = false;
+    showModal = false;
+    pendingDeckId = null;
+  }
+
+  /** Bascule la clé de la Piste B entre Majeur et Mineur relatif (9B ↔ 9A) */
+  function handleToggleRelative() {
+    const info = keyInfo(trackB.key || '12B');
+    if (!info) return;
+    trackB.key = info.relativeCode;
+  }
+
+  /** ÷2 tempo cible : corrige une détection double-tempo de la Piste B */
+  function handleHalveTargetBpm() {
+    if (!trackB.bpm) return;
+    trackB.bpm = Math.round((trackB.bpm / 2) * 100) / 100;
+  }
+
+  function handleQuitClean() {
+    handleEjectTrack('A');
+    handleEjectTrack('B');
+    resetAudioEngine();
+  }
+
+  function handleStartAnalysis() {
+    if (!isBothLoaded) return;
+    analysisDone = true;
+  }
+
+  function handlePlay(deckId: 'A' | 'B') {
+    const track = deckId === 'A' ? trackA : trackB;
+    if (!track.file) return;
+    (deckId === 'A' ? playerA : playerB).play();
+  }
+
+  function handleStop(deckId: 'A' | 'B') {
+    (deckId === 'A' ? playerA : playerB).stop();
+  }
+
+  function handleSendToModule2(deckId: 'A' | 'B') {
+    // Routage vers le Module 2 (Démixage IA) — câblé lors de l'intégration Module 2
+    console.info(`Transfert de la piste ${deckId} vers le Module 2 (démixage IA)`);
+  }
+
+  /** Profil de grille : régularité des attaques >= 0,3 → rythme fixe (électronique), sinon variable */
+  function tempoTypeOf(track: Track) {
+    if (track.tempoRegularity == null) return null;
+    return track.tempoRegularity >= 0.3 ? 'FIXED_ELECTRONIC' : 'LIVE_DRUMS';
+  }
+
+  const pendingTrack = $derived(pendingDeckId === 'A' ? trackA : pendingDeckId === 'B' ? trackB : null);
+</script>
+
+<div class="shell w-screen h-screen bg-bg-canvas text-on-surface font-body-md text-body-md select-none flex flex-col overflow-hidden">
+  <input
+    type="file"
+    accept=".mp3,.wav,.flac,.aiff"
+    class="hidden"
+    bind:this={fileInputA}
+    onchange={(e) => handleFileSelected(e, 'A')}
+  />
+  <input
+    type="file"
+    accept=".mp3,.wav,.flac,.aiff"
+    class="hidden"
+    bind:this={fileInputB}
+    onchange={(e) => handleFileSelected(e, 'B')}
+  />
+
+  <HeaderBar appTitle="AlcheMix Studio" />
+
+  <main class="module-container w-full flex-1 min-h-0 p-gutter grid grid-cols-12 gap-gutter overflow-hidden">
+    <!-- ═══ COLONNE 1 : DECK A MASTER (AMBRE / OR) ═══ -->
+    <section class="col-left col-span-12 lg:col-span-3 flex flex-col gap-space-md h-full min-h-0 overflow-y-auto">
+      <CassetteDeck
+        deckId="A"
+        label="TRACK A - MASTER"
+        title={trackA.title}
+        artist={trackA.artist}
+        file={trackA.file}
+        isAnalyzing={trackA.isAnalyzing}
+        isPlaying={trackA.isPlaying}
+        progress={trackA.progress}
+        onPlay={() => handlePlay('A')}
+        onStop={() => handleStop('A')}
+        onLoadTrack={() => triggerLoadTrack('A')}
+        onEjectTrack={() => handleEjectTrack('A')}
+      />
+
+      <ID3TagCard
+        metadata={trackA.metadata}
+        fileName={trackA.file && typeof trackA.file === 'object' ? trackA.file.name : trackA.file}
+        coverUrl={trackA.coverUrl}
+        isFetchingOnline={trackA.isFetchingOnline}
+        isAnalyzing={trackA.isAnalyzing}
+        deckLabel="PISTE A"
+        variant="amber"
+      />
+
+      <TempoDisplay
+        bpm={trackA.bpm}
+        confidence={trackA.tempoConfidence}
+        tempoType={tempoTypeOf(trackA)}
+        trackLabel="A"
+        camelotKey={trackA.key}
+        variant="amber"
+      />
+
+      <button
+        type="button"
+        data-testid="track-action-btn"
+        disabled={!trackA.file}
+        onclick={() => handleSendToModule2('A')}
+        class="w-full flex items-center justify-center gap-space-xs py-1.5 rounded transition-all shadow-[0_2px_8px_rgba(0,0,0,0.7)] disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:active:translate-y-[1px] enabled:cursor-pointer bg-gradient-to-b from-[#C87D55] to-[#8C4A27] text-primary [box-shadow:0_2px_8px_rgba(0,0,0,0.7),inset_0_1px_0_#E69D75]"
+      >
+        <span class="text-[13px] leading-none" aria-hidden="true">≋</span>
+        <span class="font-label-md text-label-md tracking-wider uppercase font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">DÉMIXER PISTE A ➔ MODULE 2</span>
+      </button>
+    </section>
+
+    <!-- ═══ COLONNE 2 : HARMONIC ENGINE & CAMELOT WHEEL (CENTRE) ═══ -->
+    <section class="col-center col-span-12 lg:col-span-6 flex flex-col gap-space-md h-full min-h-0 overflow-hidden">
+      <!-- Bandeau moteur d'analyse harmonique -->
+      <div class="analysis-panel bg-bg-panel rounded px-space-md py-space-sm flex items-center justify-between gap-space-md shadow-[0_4px_14px_rgba(0,0,0,0.7)] shrink-0">
+        <div class="flex items-center gap-space-md min-w-0">
+          <div class="flex items-center gap-1.5 shrink-0">
+            {#if countLoaded < 2}
+              <span class="w-2 h-2 rounded-full bg-accent-amber-master shadow-[0_0_8px_#FFB300] animate-pulse"></span>
+              <span class="status-led font-label-md text-label-md text-accent-amber-master font-bold">
+                WAITING FOR TRACKS ({countLoaded}/2)
+              </span>
+            {:else if analysisDone}
+              <span class="w-2 h-2 rounded-full bg-accent-emerald-candidate shadow-[0_0_8px_#00E676]"></span>
+              <span class="status-led font-label-md text-label-md text-accent-emerald-candidate font-bold">ANALYSE COMPLÈTE — SYNC LOCK</span>
+            {:else}
+              <span class="w-2 h-2 rounded-full bg-accent-emerald-candidate shadow-[0_0_8px_#00E676] animate-pulse"></span>
+              <span class="status-led font-label-md text-label-md text-accent-emerald-candidate font-bold">OK - READY TO ANALYZE</span>
+            {/if}
+          </div>
+          <span class="text-border-copper hidden xl:inline">|</span>
+          <div class="hidden xl:flex items-center gap-1.5 min-w-0 truncate">
+            <span class="font-label-sm text-label-sm text-text-muted">HARMONIC DELTA:</span>
+            <span class="font-label-md text-label-md text-secondary font-bold truncate">
+              {compat ? compat.rule : '—'}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="btn-analyze flex items-center justify-center gap-space-xs px-space-md py-1.5 rounded transition-all shrink-0 font-label-md text-label-md tracking-wider uppercase font-bold {isBothLoaded
+            ? 'bg-gradient-to-b from-[#00A852] to-[#005226] shadow-[0_2px_8px_rgba(0,0,0,0.7),inset_0_1px_0_#7DFFA2] text-secondary hover:brightness-110 active:translate-y-[1px] cursor-pointer'
+            : 'bg-surface-container-low text-text-muted border border-border-copper/40 opacity-60 cursor-not-allowed'}"
+          disabled={!isBothLoaded}
+          onclick={handleStartAnalysis}
+        >
+          ⚡ LANCER L'ANALYSE HARMONIQUE
+        </button>
+      </div>
+
+      <!-- Cadran Camelot — scène centrale -->
+      <div class="camelot-panel relative bg-bg-panel rounded p-space-md flex flex-col items-center justify-between shadow-[0_8px_24px_rgba(0,0,0,0.85)] flex-1 min-h-0 overflow-hidden">
+        <div class="w-full flex items-center justify-between pb-1 shrink-0">
+          <div class="flex items-center gap-space-xs">
+            <span class="text-[14px] text-text-copper leading-none" aria-hidden="true">⌚</span>
+            <span class="font-title-md text-title-md text-primary tracking-wider uppercase">CADRAN D'HARMONIE CAMELOT MK-IV</span>
+          </div>
+          <div class="flex items-center gap-space-md">
+            <div class="flex items-center gap-1">
+              <span class="w-2.5 h-2.5 rounded-full bg-accent-amber-master shadow-[0_0_6px_#FFB300]"></span>
+              <span class="font-label-sm text-label-sm text-text-main">PISTE A ({trackA.key || '--'})</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <span class="w-2.5 h-2.5 rounded-full bg-accent-emerald-candidate shadow-[0_0_6px_#00E676]"></span>
+              <span class="font-label-sm text-label-sm text-text-main">PISTE B ({trackB.key || '--'})</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="wheel-wrapper relative flex items-center justify-center my-auto w-full max-w-[480px] flex-1 min-h-0 overflow-hidden py-1">
+          <CamelotWheel
+            keyA={trackA.key || '12B'}
+            keyB={trackB.key || '12B'}
+            trackNameA={trackA.title || 'Piste A'}
+            trackNameB={trackB.title || 'Piste B'}
+          />
+        </div>
+
+        <!-- Vecteur de consonance dynamique -->
+        <div class="w-full bg-surface-container-lowest p-2 rounded flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-space-sm min-w-0">
+            <span class="text-[14px] text-accent-emerald-candidate leading-none" aria-hidden="true">◈</span>
+            <span class="font-label-sm text-label-sm text-text-main truncate">
+              VECTEUR CONSONANCE :
+              <span class="text-secondary font-bold">
+                {compat ? `${compat.rule} (${trackA.key} ➔ ${trackB.key})` : 'EN ATTENTE DES DEUX PISTES'}
+              </span>
+            </span>
+          </div>
+          <span class="font-label-sm text-label-sm font-bold shrink-0 {gatekeeper === 'GO' ? 'text-accent-emerald-candidate' : 'text-status-hazard'}">
+            {gatekeeper === 'GO' ? 'ÉCART HARMONIQUE OPTIMAL' : 'ÉCART À VALIDER'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Double oscilloscope / Beatgrid 1/16 -->
+      <div class="beatgrid-panel h-52 bg-bg-bezel-glass rounded p-space-sm flex flex-col justify-between shadow-[inset_0_4px_14px_rgba(0,0,0,0.95)] shrink-0 overflow-hidden">
+        <div class="flex-1 min-h-0">
+          <BeatgridOverlay audioLoaded={isBothLoaded} />
+        </div>
+        <div class="flex items-center justify-between px-1 pt-1 text-text-muted font-label-sm text-label-sm shrink-0">
+          <span>PHASE OFFSET: <strong class="text-secondary">{isBothLoaded ? '+1.2 ms' : '—'}</strong></span>
+          <span>GRID SNAP: <strong class="text-primary">QUANTIZED 1/16</strong></span>
+          <span>TIME-STRETCH: <strong class="{Math.abs(timeStretchPercent) > 15 ? 'text-status-hazard' : 'text-accent-amber-master'}">
+            {isBothLoaded ? `${timeStretchPercent > 0 ? '+' : ''}${timeStretchPercent.toFixed(1)}%` : '—'}
+          </strong></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ COLONNE 3 : DECK B CANDIDATE & GATEKEEPER (ÉMERAUDE) ═══ -->
+    <section class="col-right col-span-12 lg:col-span-3 flex flex-col gap-space-md h-full min-h-0 overflow-y-auto">
+      <CassetteDeck
+        deckId="B"
+        label="TRACK B - CANDIDATE"
+        title={trackB.title}
+        artist={trackB.artist}
+        file={trackB.file}
+        isAnalyzing={trackB.isAnalyzing}
+        isPlaying={trackB.isPlaying}
+        progress={trackB.progress}
+        onPlay={() => handlePlay('B')}
+        onStop={() => handleStop('B')}
+        onLoadTrack={() => triggerLoadTrack('B')}
+        onEjectTrack={() => handleEjectTrack('B')}
+      />
+
+      <ID3TagCard
+        metadata={trackB.metadata}
+        fileName={trackB.file && typeof trackB.file === 'object' ? trackB.file.name : trackB.file}
+        coverUrl={trackB.coverUrl}
+        isFetchingOnline={trackB.isFetchingOnline}
+        isAnalyzing={trackB.isAnalyzing}
+        deckLabel="PISTE B"
+        variant="emerald"
+      />
+
+      <TempoDisplay
+        bpm={trackB.bpm}
+        confidence={trackB.tempoConfidence}
+        tempoType={tempoTypeOf(trackB)}
+        trackLabel="B"
+        camelotKey={trackB.key}
+        variant="emerald"
+      />
+
+      <button
+        type="button"
+        data-testid="track-action-btn"
+        disabled={!trackB.file}
+        onclick={() => handleSendToModule2('B')}
+        class="w-full flex items-center justify-center gap-space-xs py-1.5 rounded transition-all shadow-[0_2px_8px_rgba(0,0,0,0.7)] disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:active:translate-y-[1px] enabled:cursor-pointer bg-gradient-to-b from-[#00A852] to-[#005226] text-secondary [box-shadow:0_2px_8px_rgba(0,0,0,0.7),inset_0_1px_0_#7DFFA2]"
+      >
+        <span class="text-[13px] leading-none" aria-hidden="true">≋</span>
+        <span class="font-label-md text-label-md tracking-wider uppercase font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">DÉMIXER PISTE B ➔ MODULE 2</span>
+      </button>
+
+      <!-- Harmonic Gatekeeper & autorisation de mix -->
+      <section data-testid="compatibility-section" class="w-full shrink-0 mt-auto">
+        <CamelotCompatibility
+          compatibilityScore={compatibilityScore}
+          ruleApplied={ruleApplied}
+          gatekeeper={gatekeeper}
+          suggestedPitchShift={compat?.shift ?? 0}
+          timeStretchPercent={timeStretchPercent}
+          sourceCamelot={trackA.key || '8B'}
+          targetCamelot={trackB.key || '8B'}
+          keyA={trackA.key}
+          keyB={trackB.key}
+          bpmA={trackA.bpm}
+          bpmB={trackB.bpm}
+          targetBpm={trackB.bpm}
+          onHalveTargetBpm={handleHalveTargetBpm}
+          onToggleRelative={handleToggleRelative}
+        />
+      </section>
+    </section>
+  </main>
+
+  <!-- Pied de châssis horloger -->
+  <footer class="w-full bg-bg-panel border-t border-border-copper/50 py-space-sm px-gutter shrink-0">
+    <div class="w-full flex items-center justify-between gap-space-xs font-label-sm text-label-sm text-text-muted">
+      <div class="flex items-center gap-space-md">
+        <span>CHASSIS HARDWARE ID: #ALCH-9801-VX</span>
+        <span class="text-border-copper">|</span>
+        <span>CLOCK JITTER: &lt; 0.002 ps</span>
+        <span class="text-border-copper">|</span>
+        <span>SAMPLE RATE STABILITY: 100% LOCK</span>
+      </div>
+      <div class="flex items-center gap-space-md">
+        <button
+          type="button"
+          data-testid="quit-clean-cache"
+          onclick={handleQuitClean}
+          title="Purger le cache audio du module (resetAudioEngine) et éjecter les cassettes"
+          class="quit-btn font-label-sm text-label-sm text-text-muted hover:text-status-destructive underline transition-colors cursor-pointer uppercase"
+        >
+          🧹 QUITTER ET NETTOYER LE CACHE
+        </button>
+        <span>ALCHEMIX VENETIAN HOROLOGICAL DAW <span class="text-border-copper-light font-bold">© MMXXV</span></span>
+      </div>
+    </div>
+  </footer>
+
+  {#if showModal}
+    <MetadataModal
+      isOpen={showModal}
+      deckLabel={pendingDeckId === 'A' ? 'PISTE A (MASTER)' : 'PISTE B (CANDIDATE)'}
+      initialBpm={pendingTrack?.bpm || ''}
+      initialKey={pendingTrack?.key || ''}
+      onConfirm={handleModalSave}
+      onSave={handleModalSave}
+      onCancel={() => (showModal = false)}
+    />
+  {/if}
+</div>

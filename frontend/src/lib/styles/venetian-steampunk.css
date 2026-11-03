@@ -1,0 +1,444 @@
+/* AlcheMix Studio — Venetian Steampunk Dark DAW theme tokens
+   Shared design system for Module 1 front-end components (Svelte 5).
+   Palette per skills.md / skill "ui-theme-venetian-steampunk". */
+
+/* Dark DAW base surfaces */
+:root {
+  --aw-bg: #121316;                   /* polished dark slate base */
+  --aw-panel: #1A1C22;                /* dark metallic card surface */
+  --aw-panel-inset: #252830;          /* slightly lighter inset surface */
+  --aw-bezel: #08090C;                /* recessed window / canvas frame */
+  --aw-led-screen: #0A0C0F;           /* dark glassy LED display */
+  --aw-copper: #C87D55;               /* polished dark copper / brass accent */
+  --aw-copper-light: #E0B88A;         /* bright copper highlight */
+  --aw-copper-dark: #B06A43;          /* deep copper tone */
+  --aw-copper-header-start: #8C5335;  /* brushed copper plate, top */
+  --aw-copper-header-end: #4A2B1B;    /* brushed copper plate, bottom */
+  --aw-text: #E0E6ED;                 /* high-contrast clean digital text */
+  --aw-text-muted: #8A93A8;           /* secondary label text */
+  --aw-gold: #FFB300;                 /* gold / amber — kicks, sub-bass, grid lines */
+  --aw-gold-glow: rgba(255, 179, 0, 0.45);
+  --aw-emerald: #00E676;              /* emerald / turquoise — vocals, mids */
+  --aw-sapphire: #29B6F6;             /* sapphire / violet — highs, cymbales */
+  --aw-border: rgba(200, 125, 85, 0.12);
+  --aw-border-bright: rgba(200, 125, 85, 0.35);
+  --aw-bezel-border: #3A2218;
+  --led-font: 'Consolas', 'Courier New', 'Courier', monospace;
+  --aw-shadow: 0 0 20px rgba(200, 125, 85, 0.15),
+              inset 0 0 12px rgba(200, 125, 85, 0.06);
+  --aw-shadow-bright: 0 0 28px rgba(200, 125, 85, 0.35),
+              inset 0 0 16px rgba(200, 125, 85, 0.10);
+  --aw-panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.7),
+              inset 0 1px 1px rgba(200, 125, 85, 0.2);
+  --radius: 6px;
+}
+
+html, body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--aw-bg);
+  color: var(--aw-text);
+  font-family: var(--led-font);
+  overflow: hidden; /* viewport verrouillé : pas de défilement général */
+}
+
+/* ------------------------------------------------------------------ */
+/* Panneau carte DAW partagé par tous les modules                      */
+/* ------------------------------------------------------------------ */
+.aw-panel {
+  position: relative;
+  background: linear-gradient(180deg, #1A1C22 0%, #121316 100%);
+  border: 2px solid;
+  border-color: #5A3826 #2A1810 #1A0F0A #4A2E1F;
+  border-radius: var(--radius);
+  box-shadow: var(--aw-panel-shadow);
+  overflow: hidden;
+}
+
+.aw-panel.has-data {
+  border-color: #E0B88A #B06A43 #8A542A #C87D55;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), inset 0 1px 3px rgba(200, 125, 85, 0.35);
+}
+
+/* ------------------------------------------------------------------ */
+/* En-tête cuivre / laiton de chaque cartouche                         */
+/* ------------------------------------------------------------------ */
+.aw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, #8C5335 0%, #4A2B1B 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.copper-strip {
+  width: 4px;
+  height: 20px;
+  background: var(--aw-text);
+  box-shadow: 0 0 8px var(--aw-text);
+  margin-right: 10px;
+}
+
+.aw-panel-title {
+  margin: 0;
+  color: #121316;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.7), 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* ------------------------------------------------------------------ */
+/* Champs / lignes de métadonnées                                      */
+/* ------------------------------------------------------------------ */
+.aw-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 14px 16px 16px;
+  background: var(--aw-panel);
+}
+
+.aw-field {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--aw-border);
+}
+
+.aw-field:last-child {
+  border-bottom: none;
+}
+
+.aw-label {
+  flex: 0 0 92px;
+  color: var(--aw-copper);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.aw-value {
+  color: var(--aw-text);
+  font-size: 0.92rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Afficheur LED                                                       */
+/* ------------------------------------------------------------------ */
+/* Écran sombre verrier encastré (compteur BPM, etc.) */
+.aw-led-screen {
+  position: relative;
+  background: #0A0C0F;
+  border: 2px solid #2C1A12;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9);
+  border-radius: 4px;
+}
+
+/* Typographie LED : or avec lueur ambre intense */
+.aw-led {
+  color: var(--aw-gold);
+  font-family: var(--led-font);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 12px rgba(255, 179, 0, 0.7), 0 0 24px rgba(255, 179, 0, 0.3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Compteurs / badges / contrôles                                      */
+/* ------------------------------------------------------------------ */
+.aw-meter-track {
+  height: 8px;
+  background: var(--aw-panel-inset);
+  border: 1px solid var(--aw-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.aw-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--aw-emerald), var(--aw-gold));
+  box-shadow: 0 0 12px var(--aw-gold-glow);
+  border-radius: 4px;
+}
+
+.aw-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--aw-bg);
+  background: var(--aw-text);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.aw-nudge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.aw-nudge input {
+  width: 72px;
+  background: var(--aw-panel-inset);
+  border: 1px solid var(--aw-copper);
+  color: var(--aw-text);
+  font-family: var(--led-font);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-align: center;
+}
+.aw-nudge button {
+  background: var(--aw-copper);
+  color: var(--aw-bg);
+  border: none;
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.aw-nudge button:hover {
+  background: var(--aw-copper-light);
+}
+
+/* ------------------------------------------------------------------ */
+/* Cadre encastré pour le canvas forme d'onde / beatgrid               */
+/* ------------------------------------------------------------------ */
+.aw-bezel {
+  position: relative;
+  background: #08090C;
+  box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.9);
+  border: 1px solid #3A2218;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ */
+/* Bouton tactile 3D hardware — .aw-btn-steampunk                      */
+/* Effet d'enfoncement mécanique au clic + voyant LED encastré        */
+/* ------------------------------------------------------------------ */
+.aw-btn-steampunk {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  font-family: var(--led-font);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #121316;
+  background: linear-gradient(180deg, #E0B88A 0%, var(--aw-copper) 55%, #B06A43 100%);
+  border: 2px solid;
+  border-color: #E8CFA8 #8A542A #6E4426 #C87D55;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #4A2B1B, 0 0 16px rgba(200, 125, 85, 0.5),
+              inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.aw-btn-steampunk:hover:not(:disabled) {
+  background: linear-gradient(180deg, #F0D4A8 0%, #E0B88A 55%, var(--aw-copper) 100%);
+  box-shadow: 0 5px 0 #4A2B1B, 0 0 24px rgba(200, 125, 85, 0.75);
+}
+
+.aw-btn-steampunk:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #4A2B1B, inset 0 2px 5px rgba(0, 0, 0, 0.8),
+              0 1px 0 rgba(200, 125, 85, 0.3);
+}
+
+.aw-btn-steampunk:focus-visible {
+  outline: 2px solid var(--aw-gold);
+  outline-offset: 2px;
+}
+
+.aw-btn-steampunk:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+  box-shadow: 0 3px 0 #4A2B1B;
+}
+
+/* Petit voyant LED de 6 px encastré sur le bouton */
+.led-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #101216;
+  border: 1px solid var(--aw-copper-dark);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  flex-shrink: 0;
+}
+
+.led-indicator.led-active {
+  background: var(--aw-emerald); /* #00E676 — actif */
+  box-shadow: 0 0 10px var(--aw-emerald);
+}
+
+.led-indicator.led-pending {
+  background: var(--aw-gold); /* #FFB300 — en attente */
+  box-shadow: 0 0 10px var(--aw-gold);
+}
+
+/* ------------------------------------------------------------------ */
+/* Écran encastré verre fumé — .aw-bezel-glass                         */
+/* Pour TempoDisplay.svelte et ID3TagCard.svelte (afficheurs numériques) */
+/* ------------------------------------------------------------------ */
+.aw-bezel-glass {
+  position: relative;
+  background: radial-gradient(circle at center, #101216 0%, #08090C 100%);
+  border: 2px solid #3A2218;
+  box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  overflow: hidden;
+}
+
+/* Rétro-éclairage néon ambré pour les textes numérotés */
+.aw-bezel-glass .aw-led,
+.aw-bezel-glass .aw-value {
+  text-shadow: 0 0 10px rgba(255, 179, 0, 0.6);
+}
+
+/* ------------------------------------------------------------------ */
+/* Commutateur à levier steampunk — .aw-toggle-lever                   */
+/* Mute / Solo, Mode Studio / Performance                             */
+/* ------------------------------------------------------------------ */
+.aw-toggle-lever {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--led-font);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--aw-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.aw-toggle-lever input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.aw-toggle-track {
+  position: relative;
+  width: 48px;
+  height: 24px;
+  background: #101216;
+  border: 2px solid #3A2218;
+  border-radius: 14px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9),
+              0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.aw-toggle-cap {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(180deg, #E0B88A 0%, var(--aw-copper) 60%, #B06A43 100%);
+  border: 1px solid #4A2B1B;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.aw-toggle-lever input:checked + .aw-toggle-track {
+  background: linear-gradient(180deg, #1A1C22 0%, #08090C 100%);
+  border-color: var(--aw-copper);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9),
+              0 0 10px var(--aw-gold-glow);
+}
+
+.aw-toggle-lever input:checked + .aw-toggle-track .aw-toggle-cap {
+  transform: translateX(24px);
+}
+
+.aw-toggle-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #101216;
+  border: 1px solid var(--aw-copper-dark);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  flex-shrink: 0;
+}
+
+.aw-toggle-lever input:checked ~ .aw-toggle-led {
+  background: var(--aw-emerald);
+  box-shadow: 0 0 10px var(--aw-emerald);
+}
+
+/* ------------------------------------------------------------------ */
+/* Animation de chargement horlogère — .aw-spinner-gear                */
+/* Phases de calcul et d'analyse audio (Module 1 & 2)                 */
+/* ------------------------------------------------------------------ */
+@keyframes spinGear {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.aw-spinner-gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  animation: spinGear 1.6s linear infinite;
+  color: var(--aw-copper-light);
+}
+
+.aw-spinner-gear::before {
+  content: "";
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--aw-copper);
+  border-radius: 50%;
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.8),
+              0 0 10px rgba(200, 125, 85, 0.6);
+}
+
+.aw-spinner-gear::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--aw-copper);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(200, 125, 85, 0.8);
+}

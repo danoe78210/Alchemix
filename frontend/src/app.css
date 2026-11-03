@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/*
+ * AlcheMix Studio — Design tokens "Venetian Steampunk Dark DAW" (maquette MK-IV).
+ * Les noms d'utilitaires générés (bg-bg-panel, text-accent-amber-master,
+ * font-label-sm, text-label-sm, gap-space-md, p-gutter...) reproduisent
+ * fidèlement la nomenclature de la maquette HTML de référence.
+ */
+@theme {
+  /* --- Fonds & panneaux --- */
+  --color-bg-canvas: #101216;
+  --color-bg-app: #121316;
+  --color-bg-panel: #1A1C22;
+  --color-bg-panel-header: #14161C;
+  --color-bg-bezel-glass: #0B0C0E;
+
+  /* --- Accents LED --- */
+  --color-accent-amber-master: #FFB300;
+  --color-accent-amber-glow: #FFC107;
+  --color-accent-emerald-candidate: #00E676;
+  --color-accent-emerald-glow: #69F0AE;
+
+  /* --- Textes --- */
+  --color-text-main: #E0E6ED;
+  --color-text-muted: #8A94A6;
+  --color-text-copper: #C87D55;
+
+  /* --- Cuivre / laiton --- */
+  --color-border-copper: #3A2218;
+  --color-border-copper-light: #E69D75;
+
+  /* --- Statuts --- */
+  --color-status-destructive: #FF3D00;
+  --color-status-hazard: #FF9100;
+
+  /* --- Rôles Material (maquette) --- */
+  --color-primary: #ffd79b;
+  --color-on-primary: #432c00;
+  --color-secondary: #7dffa2;
+  --color-on-secondary: #003918;
+  --color-tertiary: #ffd5c1;
+  --color-error: #ffb4ab;
+  --color-outline: #9e8e78;
+  --color-outline-variant: #514532;
+  --color-surface: #121316;
+  --color-on-surface: #e3e2e6;
+  --color-on-surface-variant: #d6c4ac;
+  --color-surface-container-lowest: #0d0e11;
+  --color-surface-container-low: #1b1b1f;
+  --color-surface-container: #1f1f23;
+  --color-surface-container-high: #292a2d;
+  --color-surface-container-highest: #343538;
+
+  /* --- Espacements de la maquette --- */
+  --spacing-gutter: 0.625rem;
+  --spacing-margin: 0.625rem;
+  --spacing-space-xs: 0.25rem;
+  --spacing-space-sm: 0.375rem;
+  --spacing-space-md: 0.625rem;
+  --spacing-space-lg: 0.875rem;
+  --spacing-space-xl: 1.25rem;
+
+  /* --- Familles typographiques --- */
+  --font-label-sm: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --font-label-md: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --font-label-lg: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --font-display-md: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --font-display-lg: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --font-headline-sm: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-headline-lg: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-title-md: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-body-sm: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-body-md: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-sleeve: 'IM Fell English', 'Times New Roman', serif;
+
+  /* --- Échelle typographique de la maquette --- */
+  --text-label-sm: 9px;
+  --text-label-sm--line-height: 12px;
+  --text-label-sm--letter-spacing: 0.12em;
+  --text-label-sm--font-weight: 500;
+  --text-label-md: 10px;
+  --text-label-md--line-height: 14px;
+  --text-label-md--letter-spacing: 0.1em;
+  --text-label-md--font-weight: 500;
+  --text-label-lg: 12px;
+  --text-label-lg--line-height: 16px;
+  --text-label-lg--letter-spacing: 0.08em;
+  --text-label-lg--font-weight: 600;
+  --text-body-sm: 11px;
+  --text-body-sm--line-height: 16px;
+  --text-body-md: 13px;
+  --text-body-md--line-height: 18px;
+  --text-title-md: 13px;
+  --text-title-md--line-height: 18px;
+  --text-title-md--letter-spacing: 0.06em;
+  --text-title-md--font-weight: 700;
+  --text-headline-sm: 15px;
+  --text-headline-sm--line-height: 20px;
+  --text-headline-sm--letter-spacing: 0.03em;
+  --text-headline-sm--font-weight: 600;
+  --text-headline-lg: 20px;
+  --text-headline-lg--line-height: 26px;
+  --text-headline-lg--letter-spacing: 0.02em;
+  --text-headline-lg--font-weight: 700;
+  --text-display-md: 24px;
+  --text-display-md--line-height: 28px;
+  --text-display-md--letter-spacing: 0.04em;
+  --text-display-md--font-weight: 700;
+  --text-display-lg: 32px;
+  --text-display-lg--line-height: 36px;
+  --text-display-lg--letter-spacing: 0.05em;
+  --text-display-lg--font-weight: 700;
+}
+
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #101216;
+  color: #E0E6ED;
+  font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Voyant rubis clignotant (bouton QUITTER & NETTOYER LE CACHE) */
+@keyframes rubyBlink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px #FF3D00; }
+  50% { opacity: 0.3; box-shadow: none; }
+}
+.animate-ruby-blink {
+  animation: rubyBlink 1.2s infinite ease-in-out;
+}
