@@ -71,7 +71,7 @@
   --font-title-md: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
   --font-body-sm: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
   --font-body-md: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
-  --font-sleeve: 'IM Fell English', 'Times New Roman', serif;
+  --font-sleeve: 'Merriweather', 'Georgia', serif;
 
   /* --- Échelle typographique de la maquette --- */
   --text-label-sm: 9px;

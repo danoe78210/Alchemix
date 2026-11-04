@@ -19,6 +19,8 @@
     keyB?: string | null;
     bpmA?: number | null;
     bpmB?: number | null;
+    /** Bouton RELATIF et liste des clés compatibles : visibles seulement quand les deux pistes sont chargées */
+    showKeyLinks?: boolean;
   }
 
   let {
@@ -38,7 +40,8 @@
     keyA = null,
     keyB = null,
     bpmA = null,
-    bpmB = null
+    bpmB = null,
+    showKeyLinks = true
   } = $props();
 
   const srcKey = $derived(keyA || sourceCamelot || '8B');
@@ -65,16 +68,16 @@
   });
 </script>
 
-<div class="camelot-compat-panel w-full bg-bg-bezel-glass rounded p-space-sm flex flex-col gap-1 shadow-[inset_0_3px_12px_rgba(0,0,0,0.95)]">
+<div class="camelot-compat-panel w-full bg-bg-bezel-glass rounded p-space-md flex flex-col gap-2 shadow-[inset_0_3px_12px_rgba(0,0,0,0.95)]">
   <!-- En-tête Gatekeeper + score de consonance -->
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-1">
-      <span class="text-[14px] leading-none {isGo ? 'text-accent-emerald-candidate' : 'text-status-destructive'}" aria-hidden="true">
+      <span class="text-[16px] leading-none {isGo ? 'text-accent-emerald-candidate' : 'text-status-destructive'}" aria-hidden="true">
         {isGo ? '✓' : '✗'}
       </span>
-      <span class="font-label-sm text-label-sm text-text-main font-bold uppercase">HARMONIC GATEKEEPER</span>
+      <span class="font-label-sm text-[12px] text-text-main font-bold uppercase">HARMONIC GATEKEEPER</span>
     </div>
-    <div class="flex items-baseline gap-1 font-label-md text-label-md font-bold {isGo ? 'text-accent-emerald-candidate' : 'text-status-hazard'}">
+    <div class="flex items-baseline gap-1 font-label-md text-[13px] font-bold {isGo ? 'text-accent-emerald-candidate' : 'text-status-hazard'}">
       <span data-testid="consonance-score">{compatibilityScore}%</span>
       <span>CONSONANCE</span>
     </div>
@@ -91,27 +94,27 @@
   </div>
 
   <!-- Verdict physique du portail -->
-  <div class="p-1.5 rounded bg-surface-container-lowest flex items-center justify-between shadow-[0_2px_6px_rgba(0,0,0,0.5)]">
+  <div class="p-2.5 rounded bg-surface-container-lowest flex items-center justify-between shadow-[0_2px_6px_rgba(0,0,0,0.5)]">
     <div class="flex items-center gap-1.5">
-      <span class="text-[13px] leading-none {isGo ? 'text-accent-emerald-candidate' : 'text-status-destructive'}" aria-hidden="true">
+      <span class="text-[15px] leading-none {isGo ? 'text-accent-emerald-candidate' : 'text-status-destructive'}" aria-hidden="true">
         {isGo ? '🔓' : '🔒'}
       </span>
-      <span class="font-label-md text-label-md font-bold tracking-wider {isGo ? 'text-accent-emerald-candidate' : 'text-status-destructive'}">
+      <span class="font-label-md text-[13px] font-bold tracking-wider {isGo ? 'text-accent-emerald-candidate' : 'text-status-destructive'}">
         {isGo ? 'GO — GATE UNLOCKED' : 'NO-GO — GATE LOCKED'}
       </span>
     </div>
-    <span class="font-label-sm text-label-sm px-1 py-0.5 rounded bg-surface-container font-bold {isGo ? 'text-secondary' : 'text-error'}">
+    <span class="font-label-sm text-[12px] px-1 py-0.5 rounded bg-surface-container font-bold {isGo ? 'text-secondary' : 'text-error'}">
       {isGo ? 'VALIDÉ' : 'REFUSÉ'}
     </span>
   </div>
 
   <!-- Transition détectée -->
-  <div class="flex items-center justify-between px-0.5">
-    <span data-testid="rule-applied" class="font-label-sm text-label-sm text-text-main font-bold truncate">
+  <div class="flex items-center justify-between px-1 py-0.5">
+    <span data-testid="rule-applied" class="font-label-sm text-[12px] text-text-main font-bold truncate">
       {ruleApplied || 'WAITING FOR TRACKS (0/2)'}
     </span>
     {#if srcInfo && tgtInfo}
-      <div class="flex items-center gap-1 font-label-sm text-label-sm text-text-muted shrink-0">
+      <div class="flex items-center gap-1 font-label-sm text-[12px] text-text-muted shrink-0">
         <span data-testid="key-camelot-code" class="font-bold text-accent-amber-master">{srcInfo.code}</span>
         <span data-testid="key-full-name" class="text-text-muted">({srcInfo.noteFr})</span>
         <span aria-hidden="true">➔</span>
@@ -120,13 +123,21 @@
     {/if}
   </div>
 
+  <!-- Recommandation de pitch shift (demi-tons, max ±3) -->
+  <div class="flex items-center justify-between px-1 py-0.5">
+    <span class="font-label-sm text-[12px] text-text-muted">PITCH SHIFT :</span>
+    <span data-testid="pitch-shift" class="font-label-sm text-[12px] font-bold text-accent-amber-master">
+      {suggestedPitchShift > 0 ? '+' : ''}{suggestedPitchShift} st
+    </span>
+  </div>
+
   <!-- Alerte WARP HAZARD (>15 % de time-stretch) -->
   {#if Math.abs(timeStretchPercent) > 15}
     <div
       data-testid="warp-hazard"
-      class="warp-hazard-alert p-1.5 rounded bg-surface-container-lowest border border-status-hazard/60 flex items-center justify-between gap-2"
+      class="warp-hazard-alert p-2 rounded bg-surface-container-lowest border border-status-hazard/60 flex items-center justify-between gap-2"
     >
-      <div class="flex items-center gap-1.5 font-label-sm text-label-sm font-bold text-status-hazard">
+      <div class="flex items-center gap-1.5 font-label-sm text-[12px] font-bold text-status-hazard">
         <span class="animate-pulse" aria-hidden="true">⚠</span>
         <span>WARP HAZARD ({timeStretchPercent > 0 ? '+' : ''}{timeStretchPercent.toFixed(1)}%)</span>
       </div>
@@ -135,7 +146,7 @@
           type="button"
           data-testid="halve-target-bpm"
           onclick={onHalveTargetBpm}
-          class="flex items-center justify-center gap-1 px-2 py-1 rounded bg-surface-container-high hover:bg-surface-container-highest shadow-[0_2px_4px_rgba(0,0,0,0.5)] text-text-copper active:translate-y-[1px] transition-all cursor-pointer border border-border-copper/40 font-label-sm text-label-sm uppercase font-bold tracking-wider"
+          class="flex items-center justify-center gap-1 px-2 py-1 rounded bg-surface-container-high hover:bg-surface-container-highest shadow-[0_2px_4px_rgba(0,0,0,0.5)] text-text-copper active:translate-y-[1px] transition-all cursor-pointer border border-border-copper/40 font-label-sm text-[12px] uppercase font-bold tracking-wider"
         >
           ÷2 TEMPO CIBLE ({(effectiveTargetBpm / 2).toFixed(1)} BPM)
         </button>
@@ -144,14 +155,14 @@
   {/if}
 
   <!-- Interrupteurs tactiles : bascule relative Majeur/Mineur -->
-  {#if onToggleRelative}
-    <div class="grid grid-cols-1 gap-space-xs pt-0.5">
+  {#if showKeyLinks && onToggleRelative}
+    <div class="grid grid-cols-1 gap-space-xs pt-1">
       <button
         type="button"
         data-testid="toggle-relative-mode"
         onclick={onToggleRelative}
         title="Bascule la clé de la Piste B entre Majeur et Mineur relatif (même numéro, lettre opposée)"
-        class="flex items-center justify-center gap-1 py-1 rounded bg-surface-container-high hover:bg-surface-container-highest shadow-[0_2px_4px_rgba(0,0,0,0.5)] text-text-copper active:translate-y-[1px] transition-all cursor-pointer border border-border-copper/40 font-label-sm text-label-sm uppercase font-bold tracking-wider"
+        class="flex items-center justify-center gap-1 py-1.5 rounded bg-surface-container-high hover:bg-surface-container-highest shadow-[0_2px_4px_rgba(0,0,0,0.5)] text-text-copper active:translate-y-[1px] transition-all cursor-pointer border border-border-copper/40 font-label-sm text-[12px] uppercase font-bold tracking-wider"
       >
         ⇄ RELATIF {relativeLabel}
       </button>
@@ -159,11 +170,12 @@
   {/if}
 
   <!-- Badges des clés compatibles avec la piste Master -->
-  <div data-testid="compat-badges" class="compat-badges-container flex flex-wrap gap-1 pt-0.5">
+  {#if showKeyLinks}
+  <div data-testid="compat-badges" class="compat-badges-container flex flex-wrap gap-1.5 pt-1">
     {#each compatList as b}
       <span
         data-testid="compat-badge"
-        class="px-1.5 py-0.5 font-label-sm text-label-sm font-bold rounded border transition-all {b.code === tgtKey
+        class="px-2 py-1 font-label-sm text-[12px] font-bold rounded border transition-all {b.code === tgtKey
           ? 'bg-surface-container text-accent-emerald-candidate border-accent-emerald-candidate/50 shadow-[0_0_6px_rgba(0,230,118,0.3)]'
           : 'bg-surface-container-lowest text-[#29B6F6] border-[#29B6F6]/30'}"
       >
@@ -171,4 +183,5 @@
       </span>
     {/each}
   </div>
+  {/if}
 </div>

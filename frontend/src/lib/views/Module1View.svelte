@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * AlcheMix Studio — Module 1 : Vue principale complète (maquette MK-IV)
-   * Disposition 3 colonnes : Deck A Master (ambre) / Harmonic Engine & Camelot
-   * Wheel (centre) / Deck B Candidate & Gatekeeper (émeraude).
+   * Disposition 3 colonnes : Deck A Master (ambre) / Gatekeeper, Harmonic Engine & Camelot
+   * Wheel (centre, Gatekeeper sous la roue) / Deck B Candidate (émeraude).
    */
   import HeaderBar from '../components/HeaderBar.svelte';
   import CassetteDeck from '../components/CassetteDeck.svelte';
@@ -10,11 +10,11 @@
   import TempoDisplay from '../components/TempoDisplay.svelte';
   import CamelotWheel from '../components/CamelotWheel.svelte';
   import CamelotCompatibility from '../components/CamelotCompatibility.svelte';
+  import MixAdvisor from '../components/MixAdvisor.svelte';
   import MetadataModal from '../components/MetadataModal.svelte';
-  import BeatgridOverlay from '../components/BeatgridOverlay.svelte';
-  import { parseID3Tags, detectBPMKey, detectBitrate, resetAudioEngine, resolveTempo } from '../audioEngine.js';
-  import { compatibilityBetween, keyInfo } from '../camelot.js';
-  import { measureLoudness } from '../loudness.js';
+  import { parseID3Tags, detectBPMKey, analyzeMetadata, resetAudioEngine, resolveTempo, KEY_CONFIDENCE_MIN } from '../audioEngine.js';
+  import { fetchFallbackCover } from '../services/metadataService.js';
+  import { compatibilityBetween, keyInfo, camelotFromKeyName } from '../camelot.js';
   import { createDeckPlayer } from '../services/deckPlayer.js';
   import { onDestroy } from 'svelte';
 
@@ -33,10 +33,11 @@
     isFetchingOnline: boolean;
     tempoConfidence: number | null;
     tempoRegularity: number | null;
+    keyConfidence: number | null;
   }
 
   function emptyTrack(id: 'A' | 'B'): Track {
-    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null };
+    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null, keyConfidence: null };
   }
 
   let trackA = $state<Track>(emptyTrack('A'));
@@ -82,6 +83,11 @@
     return (trackA.bpm / trackB.bpm - 1) * 100;
   });
 
+  /** Clé DSP sous le seuil de confiance : la saisie manuelle est proposée (une clé issue d'un tag ID3 n'a pas de confiance) */
+  function isKeyUncertain(track: Track) {
+    return track.keyConfidence != null && track.keyConfidence < KEY_CONFIDENCE_MIN;
+  }
+
   function triggerLoadTrack(deckId: 'A' | 'B') {
     if (deckId === 'A') {
       if (fileInputA) fileInputA.value = '';
@@ -103,7 +109,7 @@
     (deckId === 'A' ? playerA : playerB).load(file);
     analysisDone = false;
 
-    const cleanName = file.name.replace(/\.[^/.]+$/, '');
+    const cleanName = stripAudioExtension(file.name.replace(/\.[^/.]+$/, ''));
     const parts = cleanName.split(/\s*-\s*/);
 
     let parsedArtist = 'Artiste Inconnu';
@@ -115,25 +121,6 @@
 
     track.artist = parsedArtist;
     track.title = parsedTitle;
-
-    // Enrichissement en ligne (iTunes Search) en arrière-plan, quel que soit
-    // le résultat de l'analyse locale — seuls les champs manquants sont complétés.
-    track.isFetchingOnline = true;
-    fetchOnlineMetadata(parsedArtist, parsedTitle)
-      .then((online) => {
-        track.isFetchingOnline = false;
-        // $state proxifie l'objet File : comparaison par nom, pas par référence
-        const current = track.file as File | null;
-        if (!current || current.name !== file.name) return; // piste éjectée/remplacée
-        if (online.coverUrl && !track.coverUrl) track.coverUrl = online.coverUrl;
-        if (online.genre && !track.metadata.genre) track.metadata.genre = online.genre;
-        if (online.album && !track.metadata.album) track.metadata.album = online.album;
-        if (online.year && !track.metadata.year) track.metadata.year = online.year;
-      })
-      .catch(() => {
-        track.isFetchingOnline = false;
-        // Hors-ligne / API indisponible : l'UI reste fonctionnelle
-      });
 
     try {
       // Phase 1 : tags ID3 locaux
@@ -151,6 +138,10 @@
       track.title = track.metadata.title;
       track.artist = track.metadata.artist;
 
+      // Enrichissement en ligne une fois les tags lus : artiste réel (tag, ou nom de fichier « Artiste - Titre »),
+      // sans « Artiste Inconnu » qui fausserait la recherche
+      enrichOnline(track, file, id3Tags.artist || (parts.length >= 2 ? parsedArtist : ''), track.metadata.title);
+
       // Phase 2 : décodage Web Audio + DSP de secours si BPM/clé manquants
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioContext = new AudioCtx();
@@ -162,17 +153,20 @@
       track.bpm = tempo?.bpm ?? null;
       track.tempoConfidence = tempo?.source === 'measure' ? measured.confidence : null;
       track.tempoRegularity = tempo?.source === 'measure' ? measured.regularity : null;
-      track.key = id3Tags.key || dsp.key || null;
+      const keyFromTag = camelotFromKeyName(id3Tags.key);
+      track.key = keyFromTag || dsp.key || null;
+      track.keyConfidence = keyFromTag ? null : dsp.keyConfidence;
 
-      track.metadata.bitrate = await detectBitrate(file, audioBuffer);
+      const { bitrate, loudness } = await analyzeMetadata(file, audioBuffer);
+      track.metadata.bitrate = bitrate;
       track.metadata.sample_rate = audioBuffer.sampleRate;
       track.metadata.channels = audioBuffer.numberOfChannels;
       track.metadata.duration = audioBuffer.duration;
-      track.metadata.loudness = measureLoudness(audioBuffer);
+      track.metadata.loudness = loudness;
       audioContext.close?.();
 
-      // BPM ou clé toujours indéterminés -> saisie manuelle du DJ
-      if (!track.bpm || !track.key) {
+      // BPM ou clé toujours indéterminés, ou clé peu fiable -> saisie manuelle du DJ
+      if (!track.bpm || !track.key || isKeyUncertain(track)) {
         pendingDeckId = deckId;
         showModal = true;
       }
@@ -185,9 +179,42 @@
     }
   }
 
+  /** Retire une extension de format restée dans le nom (« Lorelei.Flac » -> « Lorelei ») : iTunes ne renvoie rien avec elle */
+  function stripAudioExtension(name: string) {
+    return name.replace(/\.(flac|wav|mp3|m4a|aac|ogg|aiff?)$/i, '').trim();
+  }
+
+  /** Complète les champs manquants depuis le web, sans bloquer l'analyse locale */
+  function enrichOnline(track: Track, file: File, artist: string, title: string) {
+    track.isFetchingOnline = true;
+    fetchOnlineMetadata(artist, title)
+      .then((online) => {
+        track.isFetchingOnline = false;
+        // $state proxifie l'objet File : comparaison par nom, pas par référence
+        const current = track.file as File | null;
+        if (!current || current.name !== file.name) return; // piste éjectée/remplacée
+        if (online.coverUrl && !track.coverUrl) track.coverUrl = online.coverUrl;
+        if (online.genre && !track.metadata.genre) track.metadata.genre = online.genre;
+        if (online.album && !track.metadata.album) track.metadata.album = online.album;
+        if (online.year && !track.metadata.year) track.metadata.year = online.year;
+      })
+      .catch(() => {
+        track.isFetchingOnline = false;
+        // Hors-ligne / API indisponible : l'UI reste fonctionnelle
+      });
+  }
+
+  /** Enrichissement en ligne : iTunes d'abord, pochette de secours (MusicBrainz / Cover Art Archive) si iTunes n'en a pas */
   async function fetchOnlineMetadata(artist: string, title: string) {
+    const online = await searchItunes(artist, title);
+    if (online.coverUrl) return online;
+    const fallback = await fetchFallbackCover(artist, title);
+    return { ...online, coverUrl: fallback.success ? fallback.coverUrl : null };
+  }
+
+  async function searchItunes(artist: string, title: string) {
     try {
-      const term = encodeURIComponent(`${artist} ${title}`);
+      const term = encodeURIComponent([artist, title].filter(Boolean).join(' '));
       const res = await fetch(`https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=1`);
       const json = await res.json();
       if (json?.results && json.results.length > 0) {
@@ -227,6 +254,7 @@
     const track = pendingDeckId === 'A' ? trackA : trackB;
     track.bpm = data.bpm;
     track.key = data.key;
+    track.keyConfidence = null;
     if (data.title) track.title = data.title;
     if (data.artist) track.artist = data.artist;
     track.metadata = { ...track.metadata, bpm: data.bpm, key: data.key };
@@ -332,6 +360,7 @@
       <TempoDisplay
         bpm={trackA.bpm}
         confidence={trackA.tempoConfidence}
+        keyConfidence={trackA.keyConfidence}
         tempoType={tempoTypeOf(trackA)}
         trackLabel="A"
         camelotKey={trackA.key}
@@ -391,28 +420,32 @@
       </div>
 
       <!-- Cadran Camelot — scène centrale -->
-      <div class="camelot-panel relative bg-bg-panel rounded p-space-md flex flex-col items-center justify-between shadow-[0_8px_24px_rgba(0,0,0,0.85)] flex-1 min-h-0 overflow-hidden">
+      <div class="camelot-panel relative bg-bg-panel rounded p-space-md flex flex-col items-center justify-between shadow-[0_8px_24px_rgba(0,0,0,0.85)] flex-none overflow-hidden">
         <div class="w-full flex items-center justify-between pb-1 shrink-0">
           <div class="flex items-center gap-space-xs">
             <span class="text-[14px] text-text-copper leading-none" aria-hidden="true">⌚</span>
             <span class="font-title-md text-title-md text-primary tracking-wider uppercase">CADRAN D'HARMONIE CAMELOT MK-IV</span>
           </div>
           <div class="flex items-center gap-space-md">
-            <div class="flex items-center gap-1">
-              <span class="w-2.5 h-2.5 rounded-full bg-accent-amber-master shadow-[0_0_6px_#FFB300]"></span>
-              <span class="font-label-sm text-label-sm text-text-main">PISTE A ({trackA.key || '--'})</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <span class="w-2.5 h-2.5 rounded-full bg-accent-emerald-candidate shadow-[0_0_6px_#00E676]"></span>
-              <span class="font-label-sm text-label-sm text-text-main">PISTE B ({trackB.key || '--'})</span>
-            </div>
+            {#if trackA.key}
+              <div class="flex items-center gap-1">
+                <span class="w-2.5 h-2.5 rounded-full bg-accent-amber-master shadow-[0_0_6px_#FFB300]"></span>
+                <span class="font-label-sm text-label-sm text-text-main">PISTE A ({trackA.key})</span>
+              </div>
+            {/if}
+            {#if trackB.key}
+              <div class="flex items-center gap-1">
+                <span class="w-2.5 h-2.5 rounded-full bg-accent-emerald-candidate shadow-[0_0_6px_#00E676]"></span>
+                <span class="font-label-sm text-label-sm text-text-main">PISTE B ({trackB.key})</span>
+              </div>
+            {/if}
           </div>
         </div>
 
-        <div class="wheel-wrapper relative flex items-center justify-center my-auto w-full max-w-[480px] flex-1 min-h-0 overflow-hidden py-1">
+        <div class="wheel-wrapper relative flex items-center justify-center my-auto w-full max-w-[432px] flex-none py-1">
           <CamelotWheel
-            keyA={trackA.key || '12B'}
-            keyB={trackB.key || '12B'}
+            keyA={trackA.key}
+            keyB={trackB.key}
             trackNameA={trackA.title || 'Piste A'}
             trackNameB={trackB.title || 'Piste B'}
           />
@@ -435,19 +468,29 @@
         </div>
       </div>
 
-      <!-- Double oscilloscope / Beatgrid 1/16 -->
-      <div class="beatgrid-panel h-52 bg-bg-bezel-glass rounded p-space-sm flex flex-col justify-between shadow-[inset_0_4px_14px_rgba(0,0,0,0.95)] shrink-0 overflow-hidden">
-        <div class="flex-1 min-h-0">
-          <BeatgridOverlay audioLoaded={isBothLoaded} />
-        </div>
-        <div class="flex items-center justify-between px-1 pt-1 text-text-muted font-label-sm text-label-sm shrink-0">
-          <span>PHASE OFFSET: <strong class="text-secondary">{isBothLoaded ? '+1.2 ms' : '—'}</strong></span>
-          <span>GRID SNAP: <strong class="text-primary">QUANTIZED 1/16</strong></span>
-          <span>TIME-STRETCH: <strong class="{Math.abs(timeStretchPercent) > 15 ? 'text-status-hazard' : 'text-accent-amber-master'}">
-            {isBothLoaded ? `${timeStretchPercent > 0 ? '+' : ''}${timeStretchPercent.toFixed(1)}%` : '—'}
-          </strong></span>
-        </div>
-      </div>
+      <!-- Harmonic Gatekeeper & autorisation de mix (sous la roue Camelot) -->
+      <section data-testid="compatibility-section" class="w-full shrink-0">
+        <CamelotCompatibility
+          compatibilityScore={compatibilityScore}
+          ruleApplied={ruleApplied}
+          gatekeeper={gatekeeper}
+          suggestedPitchShift={compat?.shift ?? 0}
+          timeStretchPercent={timeStretchPercent}
+          sourceCamelot={trackA.key || '8B'}
+          targetCamelot={trackB.key || '8B'}
+          keyA={trackA.key}
+          keyB={trackB.key}
+          bpmA={trackA.bpm}
+          bpmB={trackB.bpm}
+          targetBpm={trackB.bpm}
+          onHalveTargetBpm={handleHalveTargetBpm}
+          onToggleRelative={handleToggleRelative}
+          showKeyLinks={isBothLoaded}
+        />
+      </section>
+
+      <!-- Conseils de mix : affichés uniquement quand le Gate est déverrouillé -->
+      <MixAdvisor gatekeeper={gatekeeper} compat={compat} timeStretchPercent={timeStretchPercent} />
     </section>
 
     <!-- ═══ COLONNE 3 : DECK B CANDIDATE & GATEKEEPER (ÉMERAUDE) ═══ -->
@@ -480,6 +523,7 @@
       <TempoDisplay
         bpm={trackB.bpm}
         confidence={trackB.tempoConfidence}
+        keyConfidence={trackB.keyConfidence}
         tempoType={tempoTypeOf(trackB)}
         trackLabel="B"
         camelotKey={trackB.key}
@@ -497,25 +541,6 @@
         <span class="font-label-md text-label-md tracking-wider uppercase font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">DÉMIXER PISTE B ➔ MODULE 2</span>
       </button>
 
-      <!-- Harmonic Gatekeeper & autorisation de mix -->
-      <section data-testid="compatibility-section" class="w-full shrink-0 mt-auto">
-        <CamelotCompatibility
-          compatibilityScore={compatibilityScore}
-          ruleApplied={ruleApplied}
-          gatekeeper={gatekeeper}
-          suggestedPitchShift={compat?.shift ?? 0}
-          timeStretchPercent={timeStretchPercent}
-          sourceCamelot={trackA.key || '8B'}
-          targetCamelot={trackB.key || '8B'}
-          keyA={trackA.key}
-          keyB={trackB.key}
-          bpmA={trackA.bpm}
-          bpmB={trackB.bpm}
-          targetBpm={trackB.bpm}
-          onHalveTargetBpm={handleHalveTargetBpm}
-          onToggleRelative={handleToggleRelative}
-        />
-      </section>
     </section>
   </main>
 
@@ -550,6 +575,7 @@
       deckLabel={pendingDeckId === 'A' ? 'PISTE A (MASTER)' : 'PISTE B (CANDIDATE)'}
       initialBpm={pendingTrack?.bpm || ''}
       initialKey={pendingTrack?.key || ''}
+      keyConfidence={pendingTrack?.keyConfidence ?? null}
       onConfirm={handleModalSave}
       onSave={handleModalSave}
       onCancel={() => (showModal = false)}

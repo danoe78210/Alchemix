@@ -9,14 +9,19 @@
  *   entrée  : { type: 'analyze', id: string, pcm: Float32Array, sampleRate: number }
  *             (pcm transféré en transferable)
  *   sortie  : { type: 'result', id, bpm, confidence, regularity, key } | { type: 'error', id, message }
+ *   entrée  : { type: 'metadata', id, file: File, sampleRate, numberOfChannels, duration, channels: Float32Array[] }
+ *             (canaux transférés en transferables)
+ *   sortie  : { type: 'metadata-result', id, bitrate, loudness } | { type: 'error', id, message }
  *
  * Le décodage (AudioContext.decodeAudioData) reste sur le thread principal ;
- * seul le DSP est délégué à ce worker.
+ * le DSP (tempo, tonalité, bitrate, loudness) est délégué à ce worker.
  */
-import { analyzeTempoKey } from './audioEngine.js';
+import { analyzeTempoKey, detectBitrate } from './audioEngine.js';
+import { measureLoudness } from './loudness.js';
 
-self.onmessage = (event) => {
+self.onmessage = async (event) => {
   const msg = event.data || {};
+  if (msg.type === 'metadata') return analyzeMetadataMessage(msg);
   if (msg.type !== 'analyze') return;
   try {
     const pcm = msg.pcm;
@@ -32,3 +37,20 @@ self.onmessage = (event) => {
     self.postMessage({ type: 'error', id: msg.id, message: String(err && err.message ? err.message : err) });
   }
 };
+
+async function analyzeMetadataMessage(msg) {
+  try {
+    // Faux AudioBuffer compatible avec l'interface utilisée par detectBitrate et measureLoudness
+    const audioBuffer = {
+      sampleRate: msg.sampleRate,
+      numberOfChannels: msg.numberOfChannels,
+      duration: msg.duration,
+      getChannelData: (c) => msg.channels[c]
+    };
+    const bitrate = await detectBitrate(msg.file, audioBuffer);
+    const loudness = measureLoudness(audioBuffer);
+    self.postMessage({ type: 'metadata-result', id: msg.id, bitrate, loudness });
+  } catch (err) {
+    self.postMessage({ type: 'error', id: msg.id, message: String(err && err.message ? err.message : err) });
+  }
+}

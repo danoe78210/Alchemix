@@ -138,5 +138,5 @@ En tant que DJ, je quitte le Module 1 en vidant le cache audio, ou j'exporte dir
 | FR-008 | `frontend/src/lib/components/CassetteDeck.svelte`, `services/deckPlayer.js` | Réalisé |
 | FR-009 | `frontend/src/lib/audioEngine.js` (`resetAudioEngine`), `Module1View.svelte` (`handleQuitClean`) | Réalisé |
 | FR-010 | `frontend/src/lib/views/Module1View.svelte` (`handleSendToModule2`) | **Non réalisé** : le handler ne fait qu'un `console.info` |
-| FR-011 | `frontend/src/lib/audioWorker.js`, `audioEngine.js` (`detectBPMKey`), `Module1View.svelte` | Réalisé pour tempo et tonalité ; décodage, bitrate et loudness restent sur le fil principal |
+| FR-011 | `frontend/src/lib/audioWorker.js`, `audioEngine.js` (`detectBPMKey`, `analyzeMetadata`), `Module1View.svelte` | Réalisé pour tempo, tonalité, bitrate et loudness ; décodage `decodeAudioData` reste sur le fil principal (AudioContext indisponible dans un worker) |
 | FR-012 | `frontend/src/lib/styles/venetian-steampunk.css`, `frontend/src/app.css` | Réalisé |

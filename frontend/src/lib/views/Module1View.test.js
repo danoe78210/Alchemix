@@ -14,7 +14,7 @@ function selectAudioFile(fileName) {
 		const input = this;
 		if (input.accept && input.accept.includes('.mp3')) {
 			Object.defineProperty(input, 'files', {
-				value: [{ name: fileName }],
+				value: [{ name: fileName, arrayBuffer: async () => new ArrayBuffer(0) }],
 				configurable: true,
 			});
 			input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
@@ -245,6 +245,51 @@ describe('Module1View — chargement par cassette et grille plein écran', () =>
 		expect(screen.getByRole('button', { name: /LANCER L'ANALYSE HARMONIQUE/ })).toBeDisabled();
 		// La modale ouverte pour ce deck est fermée par l'éjection
 		expect(screen.queryByTestId('metadata-modal')).not.toBeInTheDOM();
+	});
+
+	test('enrichissement en ligne : un nom de fichier sans « Artiste - Titre » n\'envoie pas « Artiste Inconnu » à la recherche', async () => {
+		const fetchMock = vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }));
+		vi.stubGlobal('fetch', fetchMock);
+
+		render(Module1View);
+		selectAudioFile('Lorelei.flac');
+		await clickLoad(0);
+
+		await vi.waitFor(() => {
+			expect(fetchMock).toHaveBeenCalled();
+		});
+		const calledUrls = fetchMock.mock.calls.map((call) => String(call[0])).join(' ');
+		expect(calledUrls).not.toContain('Artiste');
+		expect(calledUrls).toContain('term=Lorelei');
+	});
+
+	test('titre affiché : l\'extension de format est retirée même quand le nom contient un second point (« Lorelei.Flac.mp3 »)', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })));
+
+		render(Module1View);
+		selectAudioFile('Lorelei.Flac.mp3');
+		await clickLoad(0);
+
+		await vi.waitFor(() => {
+			expect(screen.getAllByTestId('deck-track-name')[0].textContent).toContain('Lorelei');
+		});
+		expect(screen.getAllByTestId('deck-track-name')[0].textContent).not.toMatch(/flac/i);
+	});
+
+	test('enrichissement en ligne : l\'extension de format (« .Flac ») n\'est pas envoyée à la recherche', async () => {
+		const fetchMock = vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }));
+		vi.stubGlobal('fetch', fetchMock);
+
+		render(Module1View);
+		selectAudioFile('Lorelei.Flac.mp3');
+		await clickLoad(0);
+
+		await vi.waitFor(() => {
+			expect(fetchMock).toHaveBeenCalled();
+		});
+		const calledUrls = fetchMock.mock.calls.map((call) => String(call[0])).join(' ');
+		expect(calledUrls).not.toContain('Flac');
+		expect(calledUrls).toContain('term=Lorelei');
 	});
 
 	test('enrichissement en ligne : pochette HD 600x600 et métadonnées iTunes quand les tags ID3 manquent', async () => {

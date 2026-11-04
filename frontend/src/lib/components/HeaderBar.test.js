@@ -35,4 +35,15 @@ describe('HeaderBar — indicateurs système et bouton QUITTER & NETTOYER LE CAC
 		await vi.waitFor(() => expect(WebviewWindow.getCurrent).toHaveBeenCalledTimes(1));
 		expect(mockClose).toHaveBeenCalledTimes(1);
 	});
+
+	test('si la fermeture de la fenêtre est refusée, l\'erreur est journalisée', async () => {
+		mockClose.mockRejectedValueOnce(new Error('window.close not allowed'));
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		render(HeaderBar, { props: { appTitle: 'AlcheMix Studio' } });
+
+		fireEvent.click(screen.getByTestId('quit-clean'));
+
+		await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('Fermeture de la fenêtre impossible:', expect.any(Error)));
+		warn.mockRestore();
+	});
 });

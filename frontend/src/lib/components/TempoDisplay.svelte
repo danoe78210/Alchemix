@@ -4,6 +4,7 @@
   interface Props {
     bpm?: number | null;
     confidence?: number | null;
+    keyConfidence?: number | null;
     tempoType?: string | null;
     gridNudgeMs?: number;
     bpmData?: any;
@@ -15,6 +16,7 @@
   let {
     bpm = null,
     confidence = null,
+    keyConfidence = null,
     tempoType = null,
     gridNudgeMs = 0,
     bpmData = null,
@@ -31,6 +33,8 @@
   const type = $derived(tempoType ?? bpmData?.type ?? null);
 
   const info = $derived(camelotKey ? keyInfo(camelotKey) : null);
+  const keyName = $derived(info ? `${info.noteEn} ${info.isMinor ? 'Minor' : 'Major'}` : 'Clé indéterminée');
+  const keyConfidenceVal = $derived(keyConfidence == null ? '—' : `${keyConfidence.toFixed(1)}%`);
 
   const confidenceLabel = $derived.by(() => {
     if (confidenceVal >= 97) return 'ULTRA-PRECISION';
@@ -82,8 +86,8 @@
           {camelotKey || '--'}
         </span>
       </div>
-      <span class="font-label-sm text-label-sm mt-0.5 {isAmber ? 'text-text-copper' : 'text-secondary'}">
-        {info ? info.fullName : 'Clé indéterminée'}
+      <span data-testid="key-name" class="font-headline-lg text-headline-lg font-bold mt-0.5 {isAmber ? 'text-text-copper' : 'text-secondary'}">
+        {keyName}
       </span>
     </div>
   </div>
@@ -95,6 +99,10 @@
       <span data-testid="tempo-confidence" class="font-bold {isAmber ? 'text-accent-amber-master' : 'text-accent-emerald-candidate'}">
         {confidenceVal == null ? '—' : `${confidenceVal.toFixed(1)}% ${confidenceLabel}`}
       </span>
+    </div>
+    <div class="flex items-center justify-between font-label-sm text-label-sm">
+      <span class="text-text-muted">KEY CONFIDENCE</span>
+      <span data-testid="key-confidence" class="font-bold {isAmber ? 'text-accent-amber-master' : 'text-accent-emerald-candidate'}">{keyConfidenceVal}</span>
     </div>
     <div class="progress-bar w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
       <div
