@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+  import logoUrl from '../../../../Assets/Alchemix_Logo.png';
 
   let { appTitle = 'AlcheMix Studio' } = $props();
 
@@ -18,10 +19,9 @@
       console.warn('Nettoyage du cache indisponible:', err);
     }
     try {
-      const win = WebviewWindow.getCurrent();
-      win?.close();
-    } catch {
-      // Ignoré en test
+      await WebviewWindow.getCurrent()?.close();
+    } catch (err) {
+      console.warn('Fermeture de la fenêtre impossible:', err);
     }
   }
 </script>
@@ -32,7 +32,7 @@
     <div class="header-brand flex items-center gap-space-sm shrink-0">
       <div class="p-[1px] bg-gradient-to-b from-border-copper-light to-border-copper rounded">
         <img
-          src="../../../../Assets/Alchemix_Logo.png"
+          src={logoUrl}
           alt="AlcheMix Studio Emblem"
           class="header-logo h-8 w-auto object-contain block"
           onerror={(e) => {
