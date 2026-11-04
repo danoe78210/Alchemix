@@ -21,7 +21,7 @@ transitions d'état. Aucune implémentation de stockage n'est impliquée : tout 
 
 - **Champs** : `title`, `artist`, `album`, `year`, `genre`, `initial_key` (code Camelot), `sample_rate`
   (ex. "44.1 kHz"), `bitrate` (ex. "320 kbps" ou "VBR"), `format` ("MP3" | "WAV"), `source`
-  ("file" | enrichi en ligne), `coverUrl` (96x96 px en affichage).
+  ("file" | enrichi en ligne), `coverUrl` (144x144 px en affichage).
 - **Validation** : tout champ peut être indisponible (fichier sans tags) → affiché comme tel, sans
   bloquer l'analyse DSP ; `format` ∈ {MP3, WAV} ; `bitrate` affiche "VBR" si bitrate variable.
 

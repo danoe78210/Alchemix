@@ -32,7 +32,9 @@ réseau sortant est celui, non bloquant, de `metadataService.js`.
 
 - **Message entrant** : `{ type: 'analyze', id: string, pcm: Float32Array, sampleRate: number }` (`pcm` transféré, copié au préalable par `detectBPMKey`).
 - **Message sortant** : `{ type: 'result', id, bpm, confidence, regularity, key }` ou `{ type: 'error', id, message }`. Le worker appelle `analyzeTempoKey` (audioEngine.js) ; `detectBPMKey` renvoie le même résultat sans l'`id`.
-- **Règles** : aucun calcul lourd hors du worker ; en environnement de test (jsdom, sans `Worker`),
+- **Message entrant (métadonnées)** : `{ type: 'metadata', id, file: File, sampleRate, numberOfChannels, duration, channels: Float32Array[] }` (canaux transférés, copiés au préalable par `analyzeMetadata`).
+- **Message sortant (métadonnées)** : `{ type: 'metadata-result', id, bitrate, loudness }` ou `{ type: 'error', id, message }`. Le worker appelle `detectBitrate` et `measureLoudness` ; `analyzeMetadata` renvoie `{ bitrate, loudness }` sans l'`id`.
+- **Règles** : aucun calcul lourd hors du worker (le décodage `decodeAudioData` reste sur le fil principal, `AudioContext` étant indisponible dans un worker) ; en environnement de test (jsdom, sans `Worker`),
   repli synchrone documenté ; `resetAudioEngine()` appelle `worker.terminate()`.
 
 ## 4. Contrats des composants Svelte (props / événements)

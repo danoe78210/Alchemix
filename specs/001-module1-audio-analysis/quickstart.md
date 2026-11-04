@@ -13,7 +13,7 @@ Guide de validation exécutable du Module 1. Toutes les commandes se lancent **�
 ## Commandes de validation (portes de la constitution, principe I)
 
 ```bash
-npm test          # Vitest run : 38+ tests sur 7 fichiers, exigé à 100 % au vert
+npm test          # Vitest run : 179 tests sur 20 fichiers (état du 2026-11-04), exigé à 100 % au vert
 npm run build     # vite build (sortie dist/) : exigé sans erreur
 npm run dev       # prévisualisation web (Vite, port 5173) pour la validation manuelle
 ```
@@ -25,11 +25,11 @@ npm run dev       # prévisualisation web (Vite, port 5173) pour la validation m
 2. **US2 (P2)** — Avec A et B analysées, lire le panneau Gatekeeper sous la Roue de Camelot.
    *Attendu* : score de consonance %, déplacement, verdict GO/NO-GO (seuil 60 %). Cas 8A/8A → 100/100 GO ;
    écart de tempo > 15 % → badge `⚠ WARP HAZARD (>15%)` ; bouton `÷2 TEMPO CIBLE` présent.
-3. **US3 (P3)** — Consulter les cartes ID3. *Attendu* : pochette 96x96 (`coverUrl`), titre, artiste, album,
+3. **US3 (P3)** — Consulter les cartes ID3. *Attendu* : pochette 144x144 (`coverUrl`), titre, artiste, album,
    année, genre, bitrate (`320 kbps` ou `VBR`), fréquence (`44.1 kHz`), format (`MP3`/`WAV`). Fichier sans
    tags → champs « indisponibles », analyse DSP non bloquée.
-4. **US4 (P3)** — Cliquer sur « Démixer Piste A ➔ Module 2 » (puis B) : la piste est transmise au Module 2.
-   Cliquer sur « Quitter et nettoyer le cache » : `resetAudioEngine()` exécuté, retour à l'état initial.
+4. **US4 (P3)** — Cliquer sur « Démixer Piste A ➔ Module 2 » (puis B) : *à venir* (placeholder, alchemix#2) ;
+   le clic ne transmet encore rien au Module 2. Cliquer sur « Quitter et nettoyer le cache » : `resetAudioEngine()` exécuté, retour à l'état initial.
 
 ## Cas limites à vérifier
 

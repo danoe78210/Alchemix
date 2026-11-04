@@ -9,11 +9,11 @@
 Le Module 1 charge deux pistes audio (Platine A — Master, Platine B — Candidate) et affiche pour chacune
 le BPM (2 décimales), la tonalité Camelot et les métadonnées ID3 enrichies, puis calcule un verdict de
 compatibilité harmonique (Gatekeeper) entre les deux. L'approche technique repose sur le moteur DSP
-existant `frontend/src/lib/audioEngine.js` (BPM par interpolation parabolique + protection anti-double
-tempo 70–115 BPM, tonalité par filtre passe-bas < 180–200 Hz + Krumhansl-Schmuckler) et `camelot.js`,
+existant `frontend/src/lib/audioEngine.js` (BPM par tempogramme de Fourier + correction de demi-tempo,
+tonalité par filtre passe-bas < 1000 Hz + Krumhansl-Schmuckler) et `camelot.js`,
 assemblés par `Module1View.svelte` et les composants Svelte existants. Conformément à la constitution,
-les calculs DSP lourds seront exécutés dans un Web Worker dédié (écart actuel comblé par ce plan) et
-l'UI restera en CSS Scoped Steampunk sans dépendance externe.
+les calculs DSP lourds sont exécutés dans un Web Worker dédié (`audioWorker.js`, en place depuis alchemix#6 et
+alchemix#11 ; seul le décodage reste sur le fil principal) et l'UI restera en CSS Scoped Steampunk sans dépendance externe.
 
 ## Technical Context
 
@@ -23,7 +23,7 @@ l'UI restera en CSS Scoped Steampunk sans dépendance externe.
 
 **Storage**: N/A pour le Module 1 — buffers audio et état d'analyse en mémoire (Web Audio API) ; la persistance de session `.mashup` est hors périmètre.
 
-**Testing**: Vitest 5 + jsdom + Testing Library, exécuté depuis la racine du dépôt (`npm test` = `vitest run`) ; 7 fichiers de test (`frontend/src/lib/audioEngine.test.js`, `frontend/src/lib/components/{BeatgridOverlay,CamelotCompatibility,HeaderBar,ID3TagCard}.test.js`, `frontend/test/CassetteDeck.test.js`, `frontend/src/lib/views/Module1View.test.js`), 38+ tests, exigés à 100 % au vert. Build : `npm run build` = `vite build` (root Vite `frontend/`, sortie `dist/`), exigé sans erreur.
+**Testing**: Vitest 5 + jsdom + Testing Library, exécuté depuis la racine du dépôt (`npm test` = `vitest run`) ; 20 fichiers de test (état du 2026-11-04 : 179 tests, 100 % au vert), dont `frontend/src/lib/audioEngine.test.js`, `frontend/src/lib/loudness.test.js` et les tests des composants et vues sous `frontend/src/lib/`. Build : `npm run build` = `vite build` (root Vite `frontend/`, sortie `dist/`), exigé sans erreur.
 
 **Target Platform**: Application desktop Tauri 2 (Windows 11 Pro en environnement de dev) ; prévisualisation web via `npm run dev` (Vite, port 5173).
 
@@ -33,7 +33,7 @@ l'UI restera en CSS Scoped Steampunk sans dépendance externe.
 
 **Constraints**: 100 % des tests Vitest au vert et build de production sans erreur à chaque étape (règle absolue) ; CSS Scoped Svelte exclusivement, charte Steampunk/Synthwave (ambre `#FFB300`, cuivre `#C87D55`, vert néon `#00E676`, cyan `#29B6F6`) ; calculs lourds en Web Workers dédiés ; modifications par injections ciblées.
 
-**Scale/Scope**: 2 pistes simultanées, ~8 composants Svelte + 1 vue, 2 moteurs de lib (`audioEngine.js`, `camelot.js`), 1 service (`metadataService.js`), 7 fichiers de test.
+**Scale/Scope**: 2 pistes simultanées, ~8 composants Svelte + 1 vue, 2 moteurs de lib (`audioEngine.js`, `camelot.js`), 1 service (`metadataService.js`), 20 fichiers de test (état du 2026-11-04).
 
 ## Constitution Check
 
@@ -41,9 +41,9 @@ l'UI restera en CSS Scoped Steampunk sans dépendance externe.
 
 | Principe (constitution v1.0.0) | Statut | Justification / action |
 |---|---|---|
-| I. Tests & Build (règle absolue) | PASS (planifié) | `npm test` (38+ tests / 7 fichiers) et `npm run build` sont des portes de validation continues listées dans `quickstart.md` et les tâches. |
+| I. Tests & Build (règle absolue) | PASS | `npm test` (179 tests / 20 fichiers au 2026-11-04) et `npm run build` sont des portes de validation continues listées dans `quickstart.md` et les tâches. |
 | II. Style & CSS Scoped Steampunk | PASS | Aucun ajout de dépendance CSS ; styles via `frontend/src/lib/styles/venetian-steampunk.css` et styles scopés des composants. |
-| III. Audio non-bloquant (Web Workers, 60 FPS) | PASS avec remédiation planifiée | **Écart constaté** : aucun `Worker` n'existe aujourd'hui dans `frontend/src` (grep sans correspondance). Le plan inclut la création d'un worker audio dédié (`research.md` R1) ; sans cette tâche, le principe serait violé. |
+| III. Audio non-bloquant (Web Workers, 60 FPS) | PASS (remédié) | Écart initial (aucun `Worker`) comblé par `audioWorker.js`. Restent sur le fil principal : `decodeAudioData` (AudioContext indisponible dans un worker). Gain de fluidité non mesuré. |
 | IV. Modularité & Fast-Track | PASS | Implémentation par injections ciblées dans les fichiers existants ; aucun réécriture de fichier complet en un bloc. |
 
 ## Project Structure
@@ -107,4 +107,4 @@ C:\Dev\Alchemix/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
 | Ajout d'un Web Worker dédié pour le DSP (constitution III) | Garantir 60 FPS pendant l'analyse FFT/tempo/tonalité de deux pistes ; le thread principal ne doit héberger aucun calcul lourd. | Garder le DSP synchrone sur le thread principal : rejeté car contraire à la constitution v1.0.0 (principe III) et aux objectifs de performance (SC-006). |
-| Enrichissement en ligne des métadonnées (iTunes Search) | Pochette HD et champs manquants lorsque les tags ID3 locaux sont incomplets. | S'appuyer uniquement aux tags ID3 locaux : rejeté car la spec exige une carte enrichie (pochette 96x96, champs complets) ; le service reste non bloquant avec repli `{ success: false }`. |
+| Enrichissement en ligne des métadonnées (iTunes Search) | Pochette HD et champs manquants lorsque les tags ID3 locaux sont incomplets. | S'appuyer uniquement aux tags ID3 locaux : rejeté car la spec exige une carte enrichie (pochette 144x144, champs complets) ; le service reste non bloquant avec repli `{ success: false }`. |

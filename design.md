@@ -2,152 +2,144 @@
 
 > **Project**: AlcheMix Studio — Module 1: Entry Analyzer & Harmonic Decision Gatekeeper  
 > **Target Theme**: Steampunk Cyber-Vintage / Dark Industrial Audio Studio  
-> **Layout Architecture**: 3-Column Equalized Viewport (28% / 44% / 28%)  
-> **Version**: 1.4.0  
+> **Layout Architecture**: Grille 12 colonnes : 3 / 6 / 3 à partir de `lg` (1024 px), empilée en dessous  
+> **Version**: 1.5.0 (alignée sur l'UI réelle de Module 1 ; voir `specs/001-module1-audio-analysis/spec.md`)
 
 ---
 
 ## 1. Design Tokens & Color Palette
 
+Les tokens sont définis dans deux fichiers : `frontend/src/app.css` (variables Tailwind `--color-*`, `--font-*`, `--text-*`) et `frontend/src/lib/styles/venetian-steampunk.css` (variables `--aw-*`). Les valeurs ci-dessous sont celles de `app.css`, sauf mention contraire.
+
 ### 1.1 Color Hierarchy
 ```json
 {
   "backgrounds": {
+    "canvas": "#101216",
     "app": "#121316",
     "panel": "#1A1C22",
     "panelHeader": "#14161C",
-    "canvas": "#101216",
     "bezelGlass": "#0B0C0E"
   },
   "borders": {
     "copper": "#3A2218",
-    "copperLight": "#E69D75",
-    "amber": "rgba(255, 179, 0, 0.4)",
-    "emerald": "rgba(0, 230, 118, 0.4)"
+    "copperLight": "#E69D75"
   },
   "accents": {
-    "copperPrimary": "#C87D55",
-    "copperDark": "#8C4A27",
     "amberMaster": "#FFB300",
     "amberGlow": "#FFC107",
     "emeraldCandidate": "#00E676",
     "emeraldGlow": "#69F0AE",
-    "turquoiseHigh": "#00E5FF",
-    "sapphireSub": "#29B6F6"
+    "copperText": "#C87D55",
+    "destructive": "#FF3D00",
+    "hazard": "#FF9100"
   },
   "typography": {
     "main": "#E0E6ED",
-    "muted": "#8A94A6",
-    "headerCopper": "#C87D55",
-    "codeFont": "'Courier New', monospace"
+    "muted": "#8A94A6"
   }
 }
 ```
+
+Les couleurs de fréquence des formes d'onde et de la roue suivent la charte du projet : sub-bass et kicks (< 250 Hz) en or `#FFB300`, médiums et voix (250 Hz – 4 kHz) en émeraude `#00E676`, aigus (> 4 kHz) en saphir `#29B6F6`.
+
+### 1.2 Typography
+
+| Rôle | Police | Source |
+|---|---|---|
+| Labels et affichages LED (`font-label-*`, `font-display-*`) | JetBrains Mono, puis Cascadia Mono, Consolas, Courier New, monospace | `app.css` |
+| Titres (`font-headline-*`, `font-title-md`) | Space Grotesk, puis Segoe UI, system-ui | `app.css` |
+| Corps de texte (`font-body-*`) | DM Sans, puis Segoe UI, system-ui | `app.css` |
+| Pochette (`font-sleeve`) | Merriweather, puis Georgia | `app.css` |
+
+Les tailles suivent les tokens `--text-*` de `app.css` (labels de 9 à 12 px, corps de 11 à 13 px, titres de 13 à 32 px).
+
+### 1.3 Spacing
+
+Gouttière et marge : `0.625rem` (10 px). Les espacements `space-xs` à `space-xl` vont de 0,25 rem à 1,25 rem.
 
 ---
 
 ## 2. Global Layout & Grid Specs
 
-- **Viewport Constraint**: `height: calc(100vh - 56px); width: 100vw; overflow: hidden;`
-- **Header Height**: `56px`
-- **Grid Layout**: `display: grid; grid-template-columns: 28% 44% 28%; gap: 10px; padding: 10px;`
-- **Column Stretch**: `display: flex; flex-direction: column; gap: 10px; height: 100%;`
+- **Header Height**: `h-14` (56 px), fixe.
+- **Zone principale** : `grid grid-cols-12 gap-gutter p-gutter`, `flex-1 min-h-0 overflow-hidden`.
+- **Colonnes** (classes `col-span-12 lg:col-span-3 | 6 | 3`) : gauche = Platine A, centre = analyse et roue Camelot, droite = Platine B. Sous `lg`, les colonnes sont empilées pleine largeur et défilent verticalement.
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ HEADERBAR (56px) : Logo ALCHEMIX STUDIO | Status Audio (44.1kHz / 24-bit / GPU) | [QUITTER & NETTOYER LE CACHE]        │
-├──────────────────────────────┬──────────────────────────────────────────────────────────┬──────────────────────────────┤
-│ COLONNE 1 : DECK A (28%)     │ COLONNE 2 : ANALYSE & WAVEFORM (44%)                     │ COLONNE 3 : DECK B (28%)     │
-│                              │                                                          │                              │
-│ ┌──────────────────────────┐ │ ┌──────────────────────────────────────────────────────┐ │ ┌──────────────────────────┐ │
-│ │ CASSETTE DECK A (MASTER) │ │ │ CONTRÔLE D'ANALYSE (Bandeau 1 Ligne Compact)         │ │ │ CASSETTE DECK B (CANDID.)│ │
-│ └──────────────────────────┘ │ └──────────────────────────────────────────────────────┘ │ └──────────────────────────┘ │
-│ ┌──────────────────────────┐ │ ┌──────────────────────────────────────────────────────┐ │ ┌──────────────────────────┐ │
-│ │ ID3 TAG INFO (2 cols)    │ │ │ ROUE CAMELOT (Cadran 180px + Légende A/B)            │ │ │ ID3 TAG INFO (2 cols)    │ │
-│ └──────────────────────────┘ │ └──────────────────────────────────────────────────────┘ │ └──────────────────────────┘ │
-│ ┌──────────────────────────┐ │ ┌──────────────────────────────────────────────────────┐ │ ┌──────────────────────────┐ │
-│ │ BPM & BEATGRID DETECTION │ │ │ BEATGRID & WAVEFORM OVERLAY                          │ │ │ BPM & BEATGRID DETECTION │ │
-│ │ (S'étire flex:1 jusqu'au │ │ │ - Veille : Oscilloscope Sécurisé + Grille Spectrale  │ │ └──────────────────────────┘ │
-│ │ bas de la colonne)       │ │ │ - Post-Analyse : Dual Waveform (A:Or / B:Émeraude)   │ │ ┌──────────────────────────┐ │
-│ └──────────────────────────┘ │ └──────────────────────────────────────────────────────┘ │ │ CAMELOT COMPATIBILITY    │ │
-│                              │ (S'étire flex:1 sur tout le bas du centre)               │ │ (Verdict & Bouton Mod 2) │ │
-│                              │                                                          │ └──────────────────────────┘ │
-└──────────────────────────────┴──────────────────────────────────────────────────────────┴──────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────┐
+│ HEADERBAR (56px) : Logo | MODULE 1 · MODULE 2 · MODULE 3 · MODULE 4 | MK-IV | [QUITTER & NETTOYER LE CACHE] │
+├─────────────────────────┬───────────────────────────────────────┬──────────────────────────┤
+│ COLONNE GAUCHE (3/12)   │ COLONNE CENTRALE (6/12)               │ COLONNE DROITE (3/12)    │
+│                         │                                       │                          │
+│ CASSETTE DECK A         │ PANNEAU D'ANALYSE (LED A / B)         │ CASSETTE DECK B          │
+│ ID3 METADATA ARCHIVE A  │ ROUE CAMELOT (+ sélecteur de notation)│ ID3 METADATA ARCHIVE B   │
+│ TEMPO A (BPM, confiance)│ GATEKEEPER (consonance, GO / NO-GO)   │ TEMPO B (BPM, confiance) │
+│ [DÉMIXER PISTE A]       │                                       │ [DÉMIXER PISTE B]        │
+└─────────────────────────┴───────────────────────────────────────┴──────────────────────────┘
 ```
+
+Le tout est dans `Module1View.svelte`. Le Gatekeeper est placé sous la roue, dans la colonne centrale (alchemix#16).
 
 ---
 
 ## 3. UI Component Specifications
 
-### 3.1 HeaderBar Component
-- **Title**: `ALCHEMIX STUDIO — Module 1: Entry Analyzer`
-- **Indicators**: `44.1 kHz | 24-Bit Float | GPU Accelerated (DirectML)`
-- **Actions**: `[CLEAR CACHE & RESTART]` (Amber outlined button)
+### 3.1 HeaderBar Component (`HeaderBar.svelte`)
+- **Navigation** : quatre entrées de module, `MODULE 1 : CADRAN CAMELOT` (active), `MODULE 2 : DÉMIXAGE IA`, `MODULE 3 : WARPING & MASHUP`, `MODULE 4 : MASTERING` (inactives, sans routage).
+- **Badge** : `MK-IV` (fond `surface-container-highest`, texte copper).
+- **Action** : `QUITTER & NETTOYER LE CACHE` : appelle la commande Tauri `clean_cache`, puis ferme la fenêtre.
+- Il n'y a pas d'indicateur audio (fréquence, bit-depth, accélération GPU) dans l'en-tête.
 
 ### 3.2 CassetteDeck Component (Deck A & Deck B)
-- **Props**: `deckId: "A" | "B"`, `trackLabel: string`, `file: File | null`
-- **Visuals**:
-  - Dual brass reels with animated rotation state.
-  - Tape progress bar & glowing status LED (`Amber` = Deck A, `Emerald` = Deck B).
-  - Drag & Drop zone with file selector button.
+- **Visuels** : bobines de laiton animées, étiquette et pochette-cassette (`data-testid="cassette-sleeve"`), LED de statut (ambre = Deck A, émeraude = Deck B).
+- **Commandes** : boutons LOAD / EJECT, PLAY / STOP par platine.
+- **Chargement** : sélection de fichier par LOAD.
 
-### 3.3 ID3TagCard Component (Compact 2x2 Grid)
-- **Props**: `metadata: Object`, `trackLabel: string`
-- **Layout**:
-  - Header: Track Title & Artist (Bold 12px copper).
-  - Body (2x2 Grid): Album, Genre, Year, Bitrate / Sample Rate.
-- **Height**: Reduced by 40% to prevent bottom black gaps.
+### 3.3 ID3TagCard Component (`ID3TagCard.svelte`)
+- **En-tête** : `ID3 METADATA ARCHIVE — {deckLabel}`, badge de format et ligne de statut d'analyse.
+- **Pochette** : cadre laiton de 144 px (`w-36 h-36`), image `object-cover`. En l'absence de pochette : repli `Pas de visuel`.
+- **Champs** : grille de champs techniques définie par le snippet `spec` de `ID3TagCard.svelte`. Un champ absent s'affiche comme indisponible sans bloquer l'analyse.
 
-### 3.4 TempoDisplay Component
-- **Props**: `bpmData: Object`, `trackLabel: string`, `class: "stretch-bottom"`
-- **Metrics**:
-  - Large LED Digits: `118.50 BPM` (Deck A) vs `126.00 BPM` (Deck B).
-  - Confidence Meter: `96.4%` progress bar.
-  - Grid Type Badge: `FIXED_ELECTRONIC` / `VARIABLE_LIVE_DRUMS`.
-  - Bar Count: `128 Bars detected`.
+### 3.4 TempoDisplay Component (`TempoDisplay.svelte`)
+- **Props** : `confidence` (confiance du tempo), `keyConfidence` (confiance de la tonalité), `class`.
+- **Métriques** :
+  - Confiance du tempo : pourcentage et libellé (`ULTRA-PRECISION` à partir de 97 %, `HIGH-FIDELITY` à partir de 90 %), barre de progression, `—` si indéterminée.
+  - Confiance de la tonalité (`key-confidence`).
+  - Type de rythme : `ELECTRONIC (FIXED STEADY)` ou `LIVE DRUMS (VARIABLE)`, `—` sinon.
+- Les valeurs proviennent du moteur DSP réel (`detectBPMKey`). Il n'y a pas de valeur simulée.
 
-### 3.5 Harmonic Analysis Control Panel
-- **Badge**: `○ PRÊT POUR CALCUL` (Amber) ➔ `● ANALYSE COMPLÈTE` (Emerald).
-- **Primary CTA Button**: 
-  - Text: `⚡ LANCER L'ANALYSE HARMONIQUE (CALCUL)`
-  - Style: Copper Steampunk Gradient (`#C87D55` to `#8C4A27`), Gold Border (`#E69D75`), Glow on hover.
+### 3.5 Harmonic Analysis Control Panel (`Module1View.svelte`)
+- **Badge d'état** : `ANALYSE COMPLÈTE — SYNC LOCK` (émeraude, LED pulsante) une fois les deux pistes analysées.
+- **Bouton** : `⚡ LANCER L'ANALYSE HARMONIQUE`, dégradé cuivre `#C87D55` → `#8C4A27`, bordure `#E69D75`, halo au survol.
 
-### 3.6 CamelotWheel Component (Harmonic Clockface)
-- **Dimensions**: SVG Diameter `180px` max height.
-- **Highlights**:
-  - `Key A (Master)`: Glowing Amber sector (`#FFB300`).
-  - `Key B (Candidate)`: Glowing Emerald sector (`#00E676`).
-  - Dual Match Badge: `"MATCH PARFAIT"` when Key A === Key B.
-- **Legend Box**:
-  - `🟡 Piste A (Master): Key 8B — Don't Blame Me`
-  - `🟢 Piste B (Candidate): Key 9A — I Just Don't Know`
+### 3.6 CamelotWheel Component (`CamelotWheel.svelte`)
+- **Dimensions** : conteneur carré `aspect-ratio: 1 / 1`, `max-width: 432px`.
+- **Notation** : sélecteur `CODES` / `NOTES` / `DOUBLE` (`data-testid="notation-switch"`), `DOUBLE` par défaut.
+- **Surlignage** :
+  - Clé A (Master) : secteur ambre `#FFB300`.
+  - Clé B (Candidate) : secteur émeraude `#00E676`.
+  - Quand les deux clés sont identiques, le libellé `MATCH PARFAIT` s'affiche au centre.
+- **État neutre** : sans clé chargée, seul le cercle vert tournant est affiché, sans surbrillance (alchemix#4).
+- **Légende** : libellés des pistes A et B (`Piste A` / `Piste B` par défaut, nom du morceau une fois chargé).
 
-### 3.7 BeatgridOverlay Component (Canvas2D Dual State)
-- **Dimensions**: `flex: 1; min-height: 200px;` with `ResizeObserver` dynamic pixel sizing.
-- **Idle State (`audioLoaded = false`)**:
-  - Dark Radial Gradient background (`#14161C` to `#090A0D`).
-  - Amber Spectral Grid lines (`rgba(255,179,0,0.08)`).
-  - Sweeping oscilloscope beam with text: `"⚡ ATTENTE SIGNAL AUDIO A & B — INSERER CASSETTES"`.
-- **Post-Analysis State (`audioLoaded = true`)**:
-  - Top Half: Track A Waveform (Amber Fill `#FFB300`, Gold Peaks `#FFD54F`).
-  - Bottom Half: Track B Waveform (Emerald Fill `#00E676`, Mint Peaks `#69F0AE`).
-  - Overlay: 1/16th Beatgrid lines with bar markers (`M1`, `M2`, `M3`...).
+### 3.7 BeatgridOverlay Component (`BeatgridOverlay.svelte`)
+- **État** : le composant existe dans le dépôt mais n'est plus rendu par `Module1View` (alchemix#4). La grille 1/16 et la forme d'onde double ne font donc plus partie de l'interface de Module 1.
+- Cette section doit être réécrite si le composant est réintégré.
 
-### 3.8 CamelotCompatibility Component (Gatekeeper)
-- **Props**: `compatibility: Object`, `class: "stretch-bottom"`
-- **Elements**:
-  - Score Gauge: `85% CONSONANCE` (Radial meter).
-  - Transition Rule: `ENERGY_BOOST (+1 Wheel Step)`.
-  - Processing Presets: `Pitch Shift: -1 Semi-tone | Time Stretch: +6.3%`.
-  - Gatekeeper Status: `🔓 GATE UNLOCKED` (Emerald Glowing Badge).
-  - Action Button: `[ENVOYER VERS MODULE 2: DÉMIXAGE IA]` (Full width bottom CTA).
+### 3.8 CamelotCompatibility Component (Gatekeeper, `CamelotCompatibility.svelte`)
+- **Score** : pourcentage de consonance (`CONSONANCE`).
+- **Verdict** : `GO — GATE UNLOCKED` ou `NO-GO — GATE LOCKED`, seuil de 60 %.
+- **Alerte** : `WARP HAZARD (±x %)` affichée au-delà de 15 % de time-stretch.
+- **Action** : `÷2 TEMPO CIBLE (x BPM)`, qui divise le BPM cible par deux.
+- Le bouton « ENVOYER VERS MODULE 2 » a été retiré de ce composant. Les actions d'envoi vers Module 2 se trouvent sur chaque platine (section 3.4, bouton `DÉMIXER PISTE A/B ➔ MODULE 2`), qui reste un placeholder tant que Module 2 n'est pas câblé (alchemix#2).
 
 ---
 
-## 4. UI Library Export (Tailwind / Pure CSS Classes)
+## 4. UI Library Export (CSS)
 
 ```css
-/* Steampunk Base Panel */
+/* Panneau de base steampunk */
 .aw-panel {
   background: #1A1C22;
   border: 1px solid #3A2218;
@@ -155,7 +147,7 @@
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
-/* Steampunk Primary Button */
+/* Bouton primaire steampunk */
 .aw-btn-steampunk {
   background: linear-gradient(180deg, #C87D55 0%, #8C4A27 100%);
   border: 1px solid #E69D75;
@@ -171,7 +163,7 @@
   box-shadow: 0 0 12px rgba(200, 125, 85, 0.5);
 }
 
-/* Status Badges */
+/* Badges d'état */
 .aw-badge-amber {
   background: rgba(255, 179, 0, 0.15);
   color: #FFB300;
@@ -184,3 +176,12 @@
   border: 1px solid rgba(0, 230, 118, 0.4);
 }
 ```
+
+Ces classes décrivent la bibliothèque de référence. Vérifier leur usage dans le code avant de les réutiliser : certaines ne sont peut-être pas appliquées à ce jour.
+
+---
+
+## 5. Limites connues
+
+- Le rendu visuel de l'ensemble n'a pas été contrôlé dans un navigateur par l'agent (cartes #4, #16, #17 en `review`).
+- Les tailles de police et d'espacement exactes sont celles des classes Tailwind du code ; ce document ne les reproduit pas toutes.
