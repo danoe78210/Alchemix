@@ -1,12 +1,15 @@
 <script lang="ts">
   import { CAMELOT_KEYS, compatibleCodes, frenchNote, parseCode } from '$lib/camelot.js';
 
-  let { keyA = "12B", keyB = "12B", trackNameA = "Piste A", trackNameB = "Piste B" } = $props<{
-    keyA?: string;
-    keyB?: string;
+  // Sans clé (aucune piste analysée) : état neutre, seul le cercle vert tournant reste visible
+  let { keyA = null, keyB = null, trackNameA = "Piste A", trackNameB = "Piste B" } = $props<{
+    keyA?: string | null;
+    keyB?: string | null;
     trackNameA?: string;
     trackNameB?: string;
   }>();
+
+  const isIdle = $derived(!keyA && !keyB);
 
   // Sélecteur de notation : codes Camelot seuls, clés musicales seules, ou double notation
   type NotationMode = 'codes' | 'notes' | 'double';
@@ -61,6 +64,7 @@
 </script>
 
 <div class="camelot-wrapper">
+  {#if !isIdle}
   <div class="wheel-header">
     <span class="icon">🎡</span>
     <span class="title">CADRAN D'HARMONIE CAMELOT</span>
@@ -70,8 +74,9 @@
       <button type="button" class="notation-opt {notation === 'double' ? 'active' : ''}" data-testid="notation-double" onclick={() => (notation = 'double')}>DOUBLE</button>
     </div>
   </div>
+  {/if}
 
-  <div class="svg-container" style="width: 100%; max-width: 484px; aspect-ratio: 1 / 1; margin: 0 auto;">
+  <div class="svg-container" style="width: 100%; max-width: 432px; aspect-ratio: 1 / 1; margin: 0 auto;">
     <svg
       viewBox="0 0 400 400"
       style="width: 100%; height: 100%; display: block;"
@@ -87,6 +92,9 @@
 
       <circle cx={CX} cy={CY} r="194" fill="#121316" stroke="#3A2218" stroke-width="4" />
       <circle cx={CX} cy={CY} r="186" fill="#181A20" stroke="#C87D55" stroke-width="1.5" stroke-dasharray="2,4" />
+      {#if isIdle}
+        <circle data-testid="wheel-idle-ring" cx={CX} cy={CY} r="190" class="idle-ring" fill="none" stroke="#00E676" stroke-width="4" stroke-dasharray="6 5" />
+      {/if}
 
       <!-- Arc de connexion lumineux entre la clé A et la clé B -->
       {#if arcPath}
@@ -117,6 +125,7 @@
             stroke={isKeyA ? '#FFE082' : isKeyB ? '#B9F6CA' : isCompat ? '#29B6F6' : '#3A2218'}
             stroke-width={isKeyA || isKeyB ? '4' : isCompat ? '3' : '2'}
           />
+          {#if !isIdle}
           {#if notation === 'double'}
             <text x={x} y={y + 2} text-anchor="middle" font-size="15" font-weight="800" fill={isKeyA || isKeyB ? '#000' : isCompat ? '#29B6F6' : '#E0E6ED'}>
               {frenchNote(k.majorEn)}
@@ -132,6 +141,7 @@
             <text x={x} y={y + 6.5} text-anchor="middle" font-size="18" font-weight="800" fill={isKeyA || isKeyB ? '#000' : isCompat ? '#29B6F6' : '#E0E6ED'}>
               {code}
             </text>
+          {/if}
           {/if}
           {#if isKeyA || isKeyB}
             <g class="deck-badge" data-testid={isKeyA && isKeyB ? 'badge-ab' : isKeyA ? 'badge-a' : 'badge-b'}>
@@ -164,6 +174,7 @@
             stroke={isKeyA ? '#FFE082' : isKeyB ? '#B9F6CA' : isCompat ? '#29B6F6' : '#2D3039'}
             stroke-width={isKeyA || isKeyB ? '4' : isCompat ? '3' : '2'}
           />
+          {#if !isIdle}
           {#if notation === 'double'}
             <text x={x} y={y + 1} text-anchor="middle" font-size="11.5" font-weight="800" fill={isKeyA || isKeyB ? '#000' : isCompat ? '#29B6F6' : '#E0E6ED'}>
               {minorNote(k)}
@@ -180,6 +191,7 @@
               {code}
             </text>
           {/if}
+          {/if}
           {#if isKeyA || isKeyB}
             <g class="deck-badge" data-testid={isKeyA && isKeyB ? 'badge-ab' : isKeyA ? 'badge-a' : 'badge-b'}>
               <circle cx={x + 16} cy={y - 16} r="8.5" class={isKeyA && !isKeyB ? 'badge-circle-a' : isKeyB && !isKeyA ? 'badge-circle-b' : 'badge-circle-ab'} />
@@ -192,24 +204,32 @@
       {/each}
 
       <circle cx={CX} cy={CY} r="54" fill="#0D0E11" stroke="#C87D55" stroke-width="2.5" />
-      <text x={CX} y={CY - 20} text-anchor="middle" font-size="12" font-weight="700" fill="#8899A6">TRANSITION</text>
-      <text x={CX} y={CY + 6} text-anchor="middle" font-size="18" font-weight="800" fill="#FFB300">{keyA} ➔ {keyB}</text>
-      {#if isMatch}
-        <text x={CX} y={CY + 26} text-anchor="middle" font-size="10" font-weight="800" fill="#00E676" class="match-label">MATCH PARFAIT</text>
+      {#if !isIdle}
+        <text x={CX} y={CY - 20} text-anchor="middle" font-size="12" font-weight="700" fill="#8899A6">TRANSITION</text>
+        <text x={CX} y={CY + 6} text-anchor="middle" font-size="18" font-weight="800" fill="#FFB300">{keyA ?? '—'} ➔ {keyB ?? '—'}</text>
+        {#if isMatch}
+          <text x={CX} y={CY + 26} text-anchor="middle" font-size="10" font-weight="800" fill="#00E676" class="match-label">MATCH PARFAIT</text>
+        {/if}
       {/if}
     </svg>
   </div>
 
-  <div class="wheel-legend">
-    <div class="legend-item master">
-      <span class="dot dot-a" aria-hidden="true"></span>
-      <span class="label">🟡 PISTE A (MASTER) : <strong>{keyA}</strong></span>
-    </div>
-    <div class="legend-item candidate">
-      <span class="dot dot-b" aria-hidden="true"></span>
-      <span class="label">🟢 PISTE B (CANDIDATE) : <strong>{keyB}</strong></span>
-    </div>
+  {#if !isIdle}
+  <div class="wheel-legend" data-testid="wheel-legend">
+    {#if keyA}
+      <div class="legend-item master">
+        <span class="dot dot-a" aria-hidden="true"></span>
+        <span class="label">🟡 PISTE A (MASTER) : <strong>{keyA}</strong></span>
+      </div>
+    {/if}
+    {#if keyB}
+      <div class="legend-item candidate">
+        <span class="dot dot-b" aria-hidden="true"></span>
+        <span class="label">🟢 PISTE B (CANDIDATE) : <strong>{keyB}</strong></span>
+      </div>
+    {/if}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -280,11 +300,11 @@
     box-shadow: 0 0 8px rgba(200, 125, 85, 0.6);
   }
 
-  /* Le SVG occupe 100 % de la largeur/hauteur du conteneur (cadran 484×484) */
+  /* Le SVG occupe 100 % de la largeur/hauteur du conteneur (cadran 432×432, soit 90 % de l'ancienne taille 484) */
   .svg-container {
     width: 100%;
-    max-width: 484px;
-    height: 484px;
+    max-width: 432px;
+    height: 432px;
     aspect-ratio: 1 / 1;
     display: flex;
     justify-content: center;
@@ -297,8 +317,8 @@
     width: 100%;
     height: 100%;
     overflow: visible;
-    max-width: 484px;
-    max-height: 484px;
+    max-width: 432px;
+    max-height: 432px;
   }
 
   /* Surlignage de la tonalité active + lueur sur les 4 clés compatibles */
@@ -333,6 +353,13 @@
     stroke-width: 3.5;
     stroke-dasharray: 6 5;
     filter: drop-shadow(0 0 8px rgba(255, 179, 0, 0.9)) drop-shadow(0 0 8px rgba(0, 230, 118, 0.8));
+    animation: spinRing 9s linear infinite;
+    transform-origin: center;
+  }
+
+  /* État neutre (aucune clé) : cercle vert tournant autour de la roue */
+  .idle-ring {
+    filter: drop-shadow(0 0 8px rgba(0, 230, 118, 0.9));
     animation: spinRing 9s linear infinite;
     transform-origin: center;
   }

@@ -17,6 +17,16 @@ function audioFile(name) {
 	return file;
 }
 
+/** Fichier portant un tag ID3v2.3 avec une seule trame TKEY (ex. « Am ») */
+function taggedFile(name, key) {
+	const text = [0, ...Array.from(key, (c) => c.charCodeAt(0))];
+	const frame = [0x54, 0x4b, 0x45, 0x59, 0, 0, 0, text.length, 0, 0, ...text];
+	const bytes = new Uint8Array([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, frame.length, ...frame]);
+	const file = new File([bytes], name, { type: 'audio/mpeg' });
+	file.arrayBuffer = async () => bytes.buffer;
+	return file;
+}
+
 function selectFile(file) {
 	const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click');
 	clickSpy.mockImplementation(function () {
@@ -89,5 +99,16 @@ describe('Module1View — tempo calculé à partir du décodage audio', () => {
 		});
 		const key = screen.getAllByTestId('telemetry-key')[0].textContent.trim();
 		expect(key).toMatch(/^(\d{1,2}[AB]|--)$/);
+	});
+
+	test('un tag ID3 TKEY en notation musicale (« Am ») est converti en code Camelot 8A', async () => {
+		render(Module1View);
+		selectFile(taggedFile('Artiste - Titre.mp3', 'Am'));
+		fireEvent.click(screen.getAllByTestId('deck-load-eject')[0]);
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('.bpm-number').textContent).toMatch(/^\d+\.\d{2}$/);
+		});
+		expect(screen.getAllByTestId('telemetry-key')[0].textContent.trim()).toBe('8A');
 	});
 });

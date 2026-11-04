@@ -6,6 +6,7 @@
     deckLabel?: string;
     initialBpm?: string | number;
     initialKey?: string;
+    keyConfidence?: number | null;
     onConfirm?: ((p: { bpm: number; key: string; title?: string; artist?: string }) => void) | null;
     onSave?: ((p: { bpm: number; key: string; title?: string; artist?: string }) => void) | null;
     onCancel?: () => void;
@@ -16,6 +17,7 @@
     deckLabel = 'PISTE',
     initialBpm = '',
     initialKey = '',
+    keyConfidence = null,
     onConfirm = null,
     onSave = null,
     onCancel = null
@@ -106,6 +108,12 @@
           </select>
         </div>
       </label>
+
+      {#if keyConfidence != null}
+        <span class="modal-warning text-[11px] text-amber-300 font-semibold" data-testid="modal-key-warning">
+          Confiance de la tonalité détectée : {keyConfidence.toFixed(1)} %. Vérifiez ou corrigez la clé.
+        </span>
+      {/if}
 
       {#if keyInput.trim() !== '' && keyCode === null}
         <span class="modal-error text-[11px] text-red-400 font-semibold" data-testid="modal-key-error">
