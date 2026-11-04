@@ -13,6 +13,7 @@
  * le décodage Web Audio reste à la charge de l'appelant.
  */
 import { CAMELOT_KEYS, NOTE_PC } from './camelot.js';
+import { measureLoudness } from './loudness.js';
 
 // ===================== Métadonnées ID3v2 =====================
 
@@ -314,7 +315,7 @@ export function detectBPM(audioBuffer) {
 
 /**
  * Filtre passe-bas biquad (formule RBJ, Q = 1/√2) appliqué en amont du chromagramme :
- * renforce le poids des fondamentales de basse (< 200 Hz) avant le calcul
+ * renforce le poids des graves et médiums bas (< 1000 Hz) avant le calcul
  * du chromagramme Krumhansl-Schmuckler.
  */
 function lowpassBiquad(pcm, sr, cutoffHz) {
@@ -348,6 +349,11 @@ const MINOR_PROFILE = [6.33, 2.68, 3.52, 6.00, 2.30, 3.53, 2.54, 4.75, 3.98, 2.6
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 /**
+ * Confiance minimale (%) de la tonalité détectée : en dessous, la saisie manuelle de la clé est proposée.
+ */
+export const KEY_CONFIDENCE_MIN = 70;
+
+/**
  * Tempo retenu : la mesure l'emporte si sa confiance est supérieure à 90 % ;
  * sinon le tag ID3 (TBPM) est utilisé. Sans tag, la mesure est retenue même peu fiable.
  * Renvoie { bpm, source: 'measure' | 'tag' } ou null.
@@ -361,10 +367,10 @@ export function resolveTempo(tagBpm, measured) {
 
 /**
  * Tonalité par chromagramme (énergie des classes de hauteur, octaves MIDI 36-95)
- * calculé sur la bande isolée < 180 Hz (fondamentales de basse), corrélé aux 24
+ * calculé sur la bande isolée < 1000 Hz (basse et accords), corrélé aux 24
  * profils Krumhansl-Schmuckler ajustés.
  * La note tonique (root) est déterminée en priorité depuis la classe de hauteur
- * dominante de la bande < 180 Hz. Le mode Majeur/Mineur est ensuite tranché par
+ * dominante de la bande isolée. Le mode Majeur/Mineur est ensuite tranché par
  * comparaison spectrale ciblée à la tierce (root+3 mineure vs root+4 majeure).
  * Les octaves graves (MIDI 36-47) restent surpondérées.
  * Retourne { code, keyName, confidence } (code Camelot ex. "8B") ou null.
@@ -374,8 +380,8 @@ export function detectKey(audioBuffer) {
     const sr = audioBuffer?.sampleRate;
     const raw = audioBuffer?.getChannelData?.(0);
     if (!sr || !raw || raw.length < sr) return null;
-    // Isolation des fréquences < 180 Hz : la fondamentale de basse pilote la tonalité
-    const pcm = lowpassBiquad(raw, sr, 180);
+    // Isolation des fréquences < 1000 Hz : graves et médiums bas (basse + accords) pilotent la tonalité
+    const pcm = lowpassBiquad(raw, sr, 1000);
     // N = 8192 : résolution de bin ~5,4 Hz, suffisante pour séparer les demi-tons graves
     const N = 8192, hop = 2048;
     const frames = Math.floor((pcm.length - N) / hop) + 1;
@@ -441,7 +447,7 @@ export function detectKey(audioBuffer) {
       }
     }
     if (!best) return null;
-    // Note tonique prioritaire : classe de hauteur dominante de la bande < 180 Hz.
+    // Note tonique prioritaire : classe de hauteur dominante de la bande isolée (< 1000 Hz).
     // Elle l'emporte si son meilleur profil (maj/min) reste à moins de 0.03 du score global.
     let rootPc = 0, rootMax = -1;
     for (let i = 0; i < 12; i++) if (chroma[i] > rootMax) { rootMax = chroma[i]; rootPc = i; }
@@ -565,7 +571,7 @@ function getDspWorker() {
 
 /**
  * Analyse complète d'un AudioBuffer (tempo + tonalité), exécutée soit dans audioWorker.js,
- * soit en repli synchrone. Retourne { bpm, confidence, regularity, key } (valeurs null si indéterminées).
+ * soit en repli synchrone. Retourne { bpm, confidence, regularity, key, keyConfidence } (valeurs null si indéterminées).
  */
 export function analyzeTempoKey(audioBuffer) {
   const tempo = detectBPM(audioBuffer);
@@ -574,7 +580,8 @@ export function analyzeTempoKey(audioBuffer) {
     bpm: tempo?.bpm ?? null,
     confidence: tempo?.confidence ?? null,
     regularity: tempo?.regularity ?? null,
-    key: key?.code ?? null
+    key: key?.code ?? null,
+    keyConfidence: key?.confidence ?? null
   };
 }
 
@@ -609,6 +616,53 @@ export function detectBPMKey(audioBuffer) {
       resolve(analyzeTempoKey(audioBuffer));
     }
   });
+}
+
+/**
+ * Bitrate et loudness d'un fichier décodé, calculés dans audioWorker.js quand le worker est disponible,
+ * avec repli synchrone sinon (tests). Les canaux sont copiés avant transfert : l'AudioBuffer reste utilisable.
+ */
+export function analyzeMetadata(file, audioBuffer) {
+  const worker = getDspWorker();
+  if (!worker || !audioBuffer) {
+    return analyzeMetadataSync(file, audioBuffer);
+  }
+  const channels = Array.from({ length: audioBuffer.numberOfChannels }, (_, c) => audioBuffer.getChannelData(c).slice());
+  return new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2);
+    const onMessage = (event) => {
+      const msg = event.data || {};
+      if (msg.id !== id) return;
+      worker.removeEventListener('message', onMessage);
+      if (msg.type === 'metadata-result') resolve({ bitrate: msg.bitrate, loudness: msg.loudness });
+      else analyzeMetadataSync(file, audioBuffer).then(resolve);
+    };
+    worker.addEventListener('message', onMessage);
+    try {
+      worker.postMessage(
+        {
+          type: 'metadata',
+          id,
+          file,
+          sampleRate: audioBuffer.sampleRate,
+          numberOfChannels: audioBuffer.numberOfChannels,
+          duration: audioBuffer.duration,
+          channels
+        },
+        channels.map((c) => c.buffer)
+      );
+    } catch {
+      worker.removeEventListener('message', onMessage);
+      analyzeMetadataSync(file, audioBuffer).then(resolve);
+    }
+  });
+}
+
+async function analyzeMetadataSync(file, audioBuffer) {
+  return {
+    bitrate: await detectBitrate(file, audioBuffer),
+    loudness: audioBuffer ? measureLoudness(audioBuffer) : null
+  };
 }
 
 /**

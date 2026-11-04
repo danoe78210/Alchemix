@@ -1,4 +1,5 @@
-import { detectBPM, detectKey, detectBitrate, detectBPMKey, resetAudioEngine, resolveTempo, parseID3Tags } from '$lib/audioEngine.js';
+import { detectBPM, detectKey, detectBitrate, detectBPMKey, analyzeMetadata, analyzeTempoKey, resetAudioEngine, resolveTempo, parseID3Tags } from '$lib/audioEngine.js';
+import { measureLoudness } from '$lib/loudness.js';
 import { NOTE_PC } from '$lib/camelot.js';
 
 /** Classe de hauteur (0-11) d'un nom de clé retourné par detectKey ("A", "G#m", ...). */
@@ -138,6 +139,20 @@ describe('audioEngine — detectBPM : précision du tempo (tempogramme de Fourie
 	});
 });
 
+describe('audioEngine — analyzeTempoKey transmet la confiance de la tonalité', () => {
+	test('keyConfidence (nombre) est renvoyé à côté de key', () => {
+		const res = analyzeTempoKey(chord([110, 138.59, 164.81]));
+		expect(res.key).toBe('11B');
+		expect(res.keyConfidence).toEqual(expect.any(Number));
+	});
+
+	test('keyConfidence vaut null quand la tonalité est indéterminée', () => {
+		const res = analyzeTempoKey(makeBuffer(new Float32Array(44100), 44100));
+		expect(res.key).toBeNull();
+		expect(res.keyConfidence).toBeNull();
+	});
+});
+
 describe('audioEngine — resolveTempo : mesure fiable (> 90 %) prioritaire sur le tag ID3', () => {
 	test('parseID3Tags lit bien la trame TBPM (base du test d\'intégration)', () => {
 		const tbpm = [0x54, 0x42, 0x50, 0x4d, 0, 0, 0, 4, 0, 0, 0x00, 0x31, 0x39, 0x31];
@@ -167,7 +182,7 @@ describe('audioEngine — resolveTempo : mesure fiable (> 90 %) prioritaire sur 
 	});
 });
 
-describe('audioEngine — detectKey (passe-bas < 200 Hz avant chromagramme Krumhansl-Schmuckler)', () => {
+describe('audioEngine — detectKey (passe-bas < 1000 Hz avant chromagramme Krumhansl-Schmuckler)', () => {
 	// Triade La majeur en graves : La2 110 Hz, Do#3 138.59 Hz, Mi3 164.81 Hz (< 200 Hz, passent le passe-bas).
 	// La résolution de bin (~10,8 Hz) étale chaque pic sur les classes voisines : on assert la racine
 	// à ±1 demi-ton d'une note de l'accord (détection pilotée par les fondamentales de basse).
@@ -184,6 +199,23 @@ describe('audioEngine — detectKey (passe-bas < 200 Hz avant chromagramme Krumh
 		expect(res).not.toBeNull();
 		expect(res.code).toMatch(/^(?:[1-9]|1[0-2])[AB]$/);
 		expect(withinOneSemitone(pcOfKeyName(res.keyName), [4, 8, 11])).toBe(true);
+	});
+
+	test('accord aigu La majeur (880–1320 Hz) dominant une basse Mi mineur faible -> 11B : la bande dépasse 180 Hz', () => {
+		const sr = 44100;
+		const n = Math.floor(2 * sr);
+		const high = [880, 1108.73, 1318.51];
+		const low = [82.41, 98, 123.47];
+		const pcm = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			let s = 0;
+			for (const f of high) s += Math.sin((2 * Math.PI * f * i) / sr) / high.length;
+			for (const f of low) s += (0.2 * Math.sin((2 * Math.PI * f * i) / sr)) / low.length;
+			pcm[i] = s;
+		}
+		const res = detectKey(makeBuffer(pcm, sr));
+		expect(res).not.toBeNull();
+		expect(res.code).toBe('11B');
 	});
 
 	test('retourne null sur entrée invalide ou silencieuse', () => {
@@ -367,7 +399,7 @@ class FakeWorker {
 		for (const buf of transfer) structuredClone(buf, { transfer: [buf] });
 		setTimeout(() => {
 			for (const fn of this.listeners) {
-				fn({ data: { type: 'result', id: msg.id, bpm: 120, key: '8B', confidence: 95, regularity: 0.8 } });
+				fn({ data: msg.type === 'metadata' ? { type: 'metadata-result', id: msg.id, bitrate: '320 kbps', loudness: -14 } : { type: 'result', id: msg.id, bpm: 120, key: '8B', confidence: 95, regularity: 0.8 } });
 			}
 		}, 0);
 	}
@@ -407,5 +439,60 @@ describe('detectBPMKey avec Web Worker (FR-011)', () => {
 		expect(payload).toHaveProperty('key');
 		expect(payload).toHaveProperty('confidence');
 		expect(payload).toHaveProperty('regularity');
+	});
+
+	test('analyzeMetadata délègue bitrate et loudness au worker', async () => {
+		vi.stubGlobal('Worker', FakeWorker);
+		resetAudioEngine();
+		try {
+			const res = await analyzeMetadata({ name: 'x.mp3' }, clickTrack(120));
+			expect(res).toEqual({ bitrate: '320 kbps', loudness: -14 });
+		} finally {
+			resetAudioEngine();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test('analyzeMetadata ne détache pas les canaux du buffer décodé (copie avant transfert)', async () => {
+		vi.stubGlobal('Worker', FakeWorker);
+		resetAudioEngine();
+		try {
+			const buf = clickTrack(120);
+			const before = buf.getChannelData(0).length;
+			await analyzeMetadata({ name: 'x.mp3' }, buf);
+			expect(buf.getChannelData(0).length).toBe(before);
+		} finally {
+			resetAudioEngine();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test('audioWorker.js calcule bitrate (en-tête MP3) et loudness depuis les canaux', async () => {
+		await import('$lib/audioWorker.js');
+		const post = vi.spyOn(self, 'postMessage').mockImplementation(() => {});
+		const bytes = new Uint8Array(64);
+		bytes.set([0xff, 0xfb, 0xe0, 0x00]);
+		const file = { arrayBuffer: async () => bytes.buffer };
+		const pcm = clickTrack(120).getChannelData(0);
+		await self.onmessage({
+			data: { type: 'metadata', id: 'M', file, sampleRate: 44100, numberOfChannels: 1, duration: 8, channels: [pcm] }
+		});
+		const payload = post.mock.calls[0][0];
+		post.mockRestore();
+		expect(payload).toEqual({
+			type: 'metadata-result',
+			id: 'M',
+			bitrate: '320 kbps',
+			loudness: measureLoudness({ sampleRate: 44100, numberOfChannels: 1, getChannelData: () => pcm })
+		});
+	});
+
+	test('analyzeMetadata sans Worker (jsdom) : repli synchrone identique à detectBitrate et measureLoudness', async () => {
+		vi.unstubAllGlobals();
+		const pcm = new Float32Array(44100 * 3).map((_, i) => 0.3 * Math.sin((2 * Math.PI * 1000 * i) / 44100));
+		const buf = { sampleRate: 44100, numberOfChannels: 1, duration: 3, getChannelData: () => pcm };
+		const res = await analyzeMetadata(null, buf);
+		expect(typeof res.loudness).toBe('number');
+		expect(res).toEqual({ bitrate: await detectBitrate(null, buf), loudness: measureLoudness(buf) });
 	});
 });
