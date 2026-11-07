@@ -6,6 +6,16 @@
  * d'onde fidèle centrée sur l'axe médian, avec marqueurs de changements (M5).
  */
 
+/** Marge verticale symétrique par défaut (8 % en haut et 8 % en bas, plage requise 5–10 %). */
+export const WAVEFORM_MARGIN_RATIO = 0.08;
+
+/**
+ * Seuil (en échantillons par colonne et par canal) séparant la vue microscopique
+ * (oscillation individuelle, <= 64 éch. ≈ 1,45 ms à 44,1 kHz) de la vue macroscopique
+ * (enveloppe multi-cycles d'un morceau complet, > 64 éch.).
+ */
+const MACRO_COLUMN_THRESHOLD = 64;
+
 /**
  * Min/max par colonne de `channelData` pour `width` colonnes d'affichage.
  *
@@ -16,45 +26,128 @@
  * - `width <= 0` ou non fini -> `Float32Array` vide ;
  * - entrée vide ou nulle -> `2 * width` zéros.
  */
-export function waveformPeaks(channelData, width) {
-  return waveformPeaksMulti([channelData], width);
+export function waveformPeaks(channelData, width, startRatio = 0, endRatio = 1) {
+  return waveformPeaksMulti([channelData], width, startRatio, endRatio);
 }
 
 /**
- * Min/max par colonne sur PLUSIEURS canaux (stéréo) : pour chaque colonne, le min
- * est le plus petit échantillon de tous les canaux et le max le plus grand.
- * L'enveloppe globale du signal est ainsi préservée quel que soit le nombre de canaux.
+ * Extraction fidèle des amplitudes négatives et positives par colonne sur un ou
+ * plusieurs canaux (mono, stéréo, multicanal), avec support optionnel de fenêtre
+ * temporelle `[startRatio, endRatio]` (zoom).
+ *
+ * - À l'échelle microscopique (`<= 64` échantillons/colonne), conserve le min et le max
+ *   exacts échantillon par échantillon sur l'ensemble des canaux.
+ * - À l'échelle macroscopique (`> 64` échantillons/colonne, ex. piste complète où chaque
+ *   colonne couvre 10 à 250 ms), découpe la colonne en sous-fenêtres acoustiques (~10–20 ms),
+ *   calcule dans chacune la moyenne quadratique demi-onde négative et positive sur 100 %
+ *   des échantillons de tous les canaux, puis retient la crête négative et positive des
+ *   sous-fenêtres. Cela préserve toutes les attaques transitoires (kick, caisse claire)
+ *   et toute la dynamique relative (couplets, refrains, silences, fondus) de façon
+ *   strictement linéaire, tout en éliminant l'effet de « brique rectangulaire » causé par
+ *   les micro-pics isolés d'un limiteur de mastering.
  *
  * - `channels` non tableau -> traité comme un seul canal ;
  * - canaux null/vides ignorés ; tous vides -> `2 * width` zéros ;
  * - `width <= 0` ou non fini -> `Float32Array` vide.
  */
-export function waveformPeaksMulti(channels, width) {
+export function waveformPeaksMulti(channels, width, startRatio = 0, endRatio = 1) {
   const w = Math.floor(width);
   if (!Number.isFinite(w) || w <= 0) return new Float32Array(0);
   const out = new Float32Array(2 * w);
   const list = (Array.isArray(channels) ? channels : [channels]).filter((c) => c && c.length > 0);
   if (list.length === 0) return out; // 2*w zéros
-  const n = list[0].length;
+
+  // Longueur maximale parmi les canaux (supporte des fréquences / durées quelconques)
+  let totalLen = 0;
+  for (const ch of list) {
+    if (ch.length > totalLen) totalLen = ch.length;
+  }
+  if (totalLen === 0) return out;
+
+  const r0 = Number.isFinite(startRatio) ? Math.max(0, Math.min(1, startRatio)) : 0;
+  const r1 = Number.isFinite(endRatio) ? Math.max(r0, Math.min(1, endRatio)) : 1;
+  const winOffset = Math.floor(r0 * totalLen);
+  const winSpan = Math.max(1, Math.floor((r1 - r0) * totalLen));
+
   for (let c = 0; c < w; c++) {
-    const start = Math.floor((c * n) / w);
-    const end = Math.min(n, Math.max(start + 1, Math.floor(((c + 1) * n) / w)));
-    let min = Infinity;
-    let max = -Infinity;
-    for (const ch of list) {
-      const lim = Math.min(end, ch.length);
-      for (let i = start; i < lim; i++) {
-        const v = ch[i];
-        if (v < min) min = v;
-        if (v > max) max = v;
+    const start = winOffset + Math.floor((c * winSpan) / w);
+    const end = Math.min(totalLen, Math.max(start + 1, winOffset + Math.floor(((c + 1) * winSpan) / w)));
+    const colSamples = end - start;
+
+    if (colSamples <= MACRO_COLUMN_THRESHOLD) {
+      let min = Infinity;
+      let max = -Infinity;
+      for (const ch of list) {
+        const lim = Math.min(end, ch.length);
+        for (let i = start; i < lim; i++) {
+          const v = ch[i];
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
       }
+      if (min > max) {
+        min = 0;
+        max = 0;
+      }
+      out[2 * c] = min;
+      out[2 * c + 1] = max;
+      continue;
     }
-    if (min > max) {
-      min = 0;
-      max = 0;
+
+    // Vue macroscopique : sous-fenêtres acoustiques (~8 sous-fenêtres par colonne, entre 64 et 1024 éch.)
+    const subWinSize = Math.max(
+      MACRO_COLUMN_THRESHOLD,
+      Math.min(1024, Math.floor(colSamples / 8))
+    );
+    let colMin = Infinity;
+    let colMax = -Infinity;
+
+    for (let ws = start; ws < end; ws += subWinSize) {
+      const we = Math.min(end, ws + subWinSize);
+      let sumNegSq = 0;
+      let sumPosSq = 0;
+      let negCount = 0;
+      let posCount = 0;
+      let totalCount = 0;
+      let wMin = Infinity;
+      let wMax = -Infinity;
+
+      for (const ch of list) {
+        const lim = Math.min(we, ch.length);
+        for (let i = ws; i < lim; i++) {
+          const v = ch[i];
+          if (v < wMin) wMin = v;
+          if (v > wMax) wMax = v;
+          if (v < 0) {
+            sumNegSq += v * v;
+            negCount++;
+          } else if (v > 0) {
+            sumPosSq += v * v;
+            posCount++;
+          }
+          totalCount++;
+        }
+      }
+
+      if (totalCount === 0 || wMin > wMax) continue;
+
+      // Si la sous-fenêtre contient des alternances négatives, moyenne quadratique demi-onde négative ;
+      // si le signal est purement positif (ex. offset continu +C), conserve wMin (> 0).
+      const subMin =
+        negCount > 0 ? -Math.sqrt(sumNegSq / totalCount) : posCount > 0 ? wMin : 0;
+      const subMax =
+        posCount > 0 ? Math.sqrt(sumPosSq / totalCount) : negCount > 0 ? wMax : 0;
+
+      if (subMin < colMin) colMin = subMin;
+      if (subMax > colMax) colMax = subMax;
     }
-    out[2 * c] = min;
-    out[2 * c + 1] = max;
+
+    if (colMin > colMax) {
+      colMin = 0;
+      colMax = 0;
+    }
+    out[2 * c] = colMin;
+    out[2 * c + 1] = colMax;
   }
   return out;
 }
@@ -73,6 +166,129 @@ export function peakAmplitude(peaks) {
     if (a > m) m = a;
   }
   return m;
+}
+
+/**
+ * Convertit le tableau d'amplitudes entrelacées `peaks` (`[min0, max0, ...]`) en
+ * coordonnées verticales et horizontales de dessin (pixels) pour un canevas de
+ * dimensions `width × height`.
+ *
+ * Garanties :
+ * - Centrage exact sur l'axe horizontal médian `mid = height / 2`.
+ * - Échelle verticale globale linéaire `scale = usableHalfHeight / refPeak` où
+ *   `usableHalfHeight = mid * (1 - marginRatio)` (marge par défaut : 8 % en haut et en bas).
+ * - Aucun écrêtage (clamping) : les coordonnées `yTop = mid - max * scale` et
+ *   `yBot = mid - min * scale` sont strictement proportionnelles aux amplitudes.
+ * - Adaptation automatique à la largeur disponible : si `cols > width`, regroupe les
+ *   colonnes par pixel horizontal pour éviter tout recouvrement en bloc.
+ */
+export function computeWaveformBars(peaks, width, height, options = {}) {
+  const w = Math.floor(width);
+  const h = Math.floor(height);
+  const rawMargin =
+    typeof options.marginRatio === 'number' && Number.isFinite(options.marginRatio)
+      ? options.marginRatio
+      : WAVEFORM_MARGIN_RATIO;
+  const marginRatio = Math.max(0.05, Math.min(0.25, rawMargin));
+
+  if (!peaks || peaks.length < 2 || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return {
+      width: Math.max(0, w || 0),
+      height: Math.max(0, h || 0),
+      mid: h > 0 ? h / 2 : 0,
+      marginRatio,
+      marginPx: 0,
+      usableHalfHeight: 0,
+      peak: 0,
+      scale: 0,
+      bars: []
+    };
+  }
+
+  const cols = Math.floor(peaks.length / 2);
+  const mid = h / 2;
+  const marginPx = mid * marginRatio;
+  const usableHalfHeight = mid - marginPx;
+  const measuredPeak = peakAmplitude(peaks);
+  const refPeak =
+    typeof options.referencePeak === 'number' &&
+    Number.isFinite(options.referencePeak) &&
+    options.referencePeak > 0
+      ? Math.max(options.referencePeak, measuredPeak)
+      : measuredPeak;
+  const scale = refPeak > 0 ? usableHalfHeight / refPeak : 0;
+
+  const bars = [];
+  if (cols <= w) {
+    const step = w / cols;
+    const barWidth = step >= 2 ? Math.max(1, step - 0.75) : Math.max(0.75, step * 0.85);
+    for (let c = 0; c < cols; c++) {
+      const min = peaks[2 * c];
+      const max = peaks[2 * c + 1];
+      const yTop = mid - max * scale;
+      const yBot = mid - min * scale;
+      const coreTop = mid - max * scale * 0.62;
+      const coreBot = mid - min * scale * 0.62;
+      bars.push({
+        x: c * step,
+        width: barWidth,
+        min,
+        max,
+        yTop,
+        yBot,
+        height: Math.max(1, yBot - yTop),
+        coreTop,
+        coreBot,
+        coreHeight: Math.max(1, coreBot - coreTop)
+      });
+    }
+  } else {
+    // Plus de colonnes que de pixels horizontaux : agrégation par pixel d'affichage
+    for (let px = 0; px < w; px++) {
+      const cStart = Math.floor((px * cols) / w);
+      const cEnd = Math.min(cols, Math.max(cStart + 1, Math.floor(((px + 1) * cols) / w)));
+      let min = Infinity;
+      let max = -Infinity;
+      for (let c = cStart; c < cEnd; c++) {
+        const mn = peaks[2 * c];
+        const mx = peaks[2 * c + 1];
+        if (mn < min) min = mn;
+        if (mx > max) max = mx;
+      }
+      if (min > max) {
+        min = 0;
+        max = 0;
+      }
+      const yTop = mid - max * scale;
+      const yBot = mid - min * scale;
+      const coreTop = mid - max * scale * 0.62;
+      const coreBot = mid - min * scale * 0.62;
+      bars.push({
+        x: px,
+        width: 0.85,
+        min,
+        max,
+        yTop,
+        yBot,
+        height: Math.max(1, yBot - yTop),
+        coreTop,
+        coreBot,
+        coreHeight: Math.max(1, coreBot - coreTop)
+      });
+    }
+  }
+
+  return {
+    width: w,
+    height: h,
+    mid,
+    marginRatio,
+    marginPx,
+    usableHalfHeight,
+    peak: refPeak,
+    scale,
+    bars
+  };
 }
 
 /**

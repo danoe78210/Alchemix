@@ -1,4 +1,4 @@
-import { peaks } from '$lib/module2/waveform.js';
+import { peaks, stemPeakAmplitude } from '$lib/module2/waveform.js';
 
 describe('peaks — formes d\'onde des stems (prototype Module 2)', () => {
 	test('retourne la crête absolue de chaque tranche de l\'échantillon', () => {
@@ -11,5 +11,17 @@ describe('peaks — formes d\'onde des stems (prototype Module 2)', () => {
 		const result = peaks(new Float32Array([0.5]), 3);
 		expect(result.length).toBe(3);
 		expect(result[0]).toBeCloseTo(0.5);
+	});
+
+	test('tranches macroscopiques (> 64 éch.) : préserve la dynamique relative et évite la saturation en bloc', () => {
+		const n = 40000;
+		const pcm = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			const amp = i < n / 2 ? 0.25 : 0.75;
+			pcm[i] = Math.sin((2 * Math.PI * i) / 40) * amp;
+		}
+		const result = peaks(pcm, 20);
+		expect(result[15] / result[5]).toBeCloseTo(3.0, 1);
+		expect(stemPeakAmplitude(result)).toBeGreaterThan(0.5);
 	});
 });

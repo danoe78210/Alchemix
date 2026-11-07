@@ -21,7 +21,24 @@ describe('StemWaveform — forme d\'onde d\'un stem (prototype Module 2)', () =>
 	});
 
 	test('signale la lecture en cours', () => {
-		render(StemWaveform, { props: { id: 'drums', label: 'Batterie', color: '#29B6F6', peaks: null, playing: true } });
+		render(StemWaveform, { id: 'drums', label: 'Batterie', color: '#29B6F6', peaks: null, playing: true });
 		expect(screen.getByTestId('wave-state-drums')).toHaveTextContent('LECTURE');
+	});
+
+	test('applique l échelle verticale avec marge de 8 % et conserve la référence maxPeak au zoom', () => {
+		render(StemWaveform, {
+			props: {
+				id: 'bass',
+				label: 'Basse',
+				color: '#FFB300',
+				peaks: new Float32Array([0.1, 0.25]),
+				maxPeak: 0.5
+			}
+		});
+		const canvas = screen.getByTestId('wave-bass');
+		// height = 200 -> mid = 100 -> usableHalf = 92 -> scale = 92 / 0.5 = 184
+		expect(Number(canvas.dataset.peak)).toBeCloseTo(0.5);
+		expect(Number(canvas.dataset.midY)).toBe(100);
+		expect(Number(canvas.dataset.scale)).toBeCloseTo(92 / 0.5);
 	});
 });

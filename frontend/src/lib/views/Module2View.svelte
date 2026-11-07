@@ -11,7 +11,7 @@
   import StemStrip from '../components/StemStrip.svelte';
   import StemWaveform from '../components/StemWaveform.svelte';
   import { StemMixer } from '../module2/mixer.js';
-  import { peaks } from '../module2/waveform.js';
+  import { peaks, stemPeakAmplitude } from '../module2/waveform.js';
   import { visibleRange } from '../module2/timeline.js';
   import { MODELS } from '../module2/models.js';
 
@@ -102,6 +102,18 @@
     return out;
   });
 
+  // Pic global par stem (calculé sur l'intégralité du stem) pour maintenir une échelle verticale constante au zoom.
+  const stemMaxPeaks = $derived.by(() => {
+    void waveVersion;
+    const out: Record<StemId, number> = { vocals: 0, drums: 0, bass: 0, other: 0 };
+    for (const { id } of STEMS) {
+      const ch = channelData[id];
+      if (!ch || ch.length === 0) continue;
+      out[id] = stemPeakAmplitude(peaks(ch, 600));
+    }
+    return out;
+  });
+
   // Niveaux et position de lecture, rafraîchis 4 fois par seconde (FR-012).
   $effect(() => {
     if (!stemsReady) return;
@@ -171,7 +183,24 @@
       const bytes = await invoke<ArrayBuffer>('get_stem_audio', { jobId, stem: id });
       const audio = await ctx.decodeAudioData(bytes);
       next.load(id, audio);
-      channelData[id] = audio.getChannelData ? audio.getChannelData(0) : null;
+      if (audio.getChannelData) {
+        const nCh = audio.numberOfChannels || 1;
+        if (nCh <= 1) {
+          channelData[id] = audio.getChannelData(0);
+        } else {
+          const ch0 = audio.getChannelData(0);
+          const merged = new Float32Array(ch0.length);
+          for (let c = 0; c < nCh; c++) {
+            const ch = audio.getChannelData(c);
+            for (let i = 0; i < merged.length; i++) {
+              if (Math.abs(ch[i]) > Math.abs(merged[i])) merged[i] = ch[i];
+            }
+          }
+          channelData[id] = merged;
+        }
+      } else {
+        channelData[id] = null;
+      }
       strips[id] = { playing: false, volume: 1, muted: false, soloed: false };
     }
     mixer = next;
@@ -397,6 +426,7 @@
                   label={stem.label}
                   color={stem.color}
                   peaks={displayed[stem.id]}
+                  maxPeak={stemMaxPeaks[stem.id]}
                   duration={audioDuration}
                   playing={strips[stem.id].playing}
                 />

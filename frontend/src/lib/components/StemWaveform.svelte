@@ -1,6 +1,7 @@
 <script lang="ts">
   import StemIcon from './StemIcon.svelte';
   import { formatTime } from '../module2/timeline.js';
+  import { stemPeakAmplitude } from '../module2/waveform.js';
 
   type StemId = 'vocals' | 'drums' | 'bass' | 'other';
 
@@ -9,28 +10,50 @@
     label: string;
     color: string;
     peaks: Float32Array | null;
+    maxPeak?: number | null;
     duration?: number | null;
     playing?: boolean;
   }
 
-  let { id, label, color, peaks, duration = null, playing = false }: Props = $props();
+  let { id, label, color, peaks, maxPeak = null, duration = null, playing = false }: Props = $props();
 
+  const MARGIN_RATIO = 0.08;
   let canvas = $state<HTMLCanvasElement | undefined>();
 
-  // Dessin de la forme d'onde : une barre symétrique par tranche, centrée verticalement.
+  // Dessin de la forme d'onde : barres symétriques autour de l'axe médian, échelle globale avec marge 8 %.
   $effect(() => {
     if (!canvas || !peaks) return;
+    const { width, height } = canvas;
+    if (width <= 0 || height <= 0) return;
+    const mid = height / 2;
+    const usableHalf = mid * (1 - MARGIN_RATIO);
+    const localPeak = stemPeakAmplitude(peaks);
+    const refPeak =
+      typeof maxPeak === 'number' && Number.isFinite(maxPeak) && maxPeak > 0
+        ? Math.max(maxPeak, localPeak)
+        : localPeak;
+    const scale = refPeak > 0 ? usableHalf / refPeak : 0;
+
+    canvas.dataset.peak = String(refPeak);
+    canvas.dataset.scale = String(scale);
+    canvas.dataset.midY = String(mid);
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const { width, height } = canvas;
-    const mid = height / 2;
-    const step = width / peaks.length;
+    const step = peaks.length > 0 ? width / peaks.length : width;
+    const barW = step >= 2 ? Math.max(1, step - 1) : Math.max(0.75, step * 0.85);
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = color;
     for (let i = 0; i < peaks.length; i++) {
-      const h = peaks[i] * mid;
-      ctx.fillRect(i * step, mid - h, Math.max(1, step - 1), h * 2);
+      const h = peaks[i] * scale;
+      ctx.fillRect(i * step, mid - h, barW, Math.max(1, h * 2));
     }
+    ctx.strokeStyle = 'rgba(200, 125, 85, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, mid);
+    ctx.lineTo(width, mid);
+    ctx.stroke();
   });
 </script>
 

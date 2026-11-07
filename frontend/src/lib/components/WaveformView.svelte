@@ -1,11 +1,11 @@
 <script lang="ts">
   // AlcheMix Studio — Module 1 : forme d'onde d'une piste avec marqueurs de changements
   // (micro-tâche M3, alchemix#44). Les marqueurs sont rendus en overlay DOM (testable
-  // en jsdom) au-dessus du canvas qui trace les barres min/max de `waveformPeaks`.
-  // L'échelle verticale est mesurée sur le pic réel du signal (`peakAmplitude`) avec
-  // 7 % de marge : aucune valeur n'est écrêtée, la dynamique relative est préservée
-  // (une seule échelle globale pour tout le morceau, aucune compression).
-  import { peakAmplitude } from '../waveform.js';
+  // en jsdom) au-dessus du canvas qui trace les barres min/max de `waveformPeaksMulti`.
+  // L'échelle verticale est mesurée sur le pic réel du signal (`peakAmplitude` / `maxPeak`)
+  // avec 8 % de marge de sécurité en haut et en bas : aucune valeur n'est écrêtée,
+  // la dynamique relative est intégralement préservée (échelle linéaire globale unique).
+  import { computeWaveformBars, WAVEFORM_MARGIN_RATIO } from '../waveform.js';
 
   interface Marker {
     t: number; // position en secondes
@@ -13,16 +13,30 @@
   }
 
   interface Props {
-    peaks?: Float32Array | null; // 2*width entrelacé [min0, max0, ...] (waveformPeaks)
+    peaks?: Float32Array | null; // 2*width entrelacé [min0, max0, ...] (waveformPeaksMulti)
     durationS?: number | null; // durée totale : position des marqueurs en %
     markers?: Marker[];
     mode?: 'rhythm' | 'key'; // mode d'annotation affiché (M4 : sélecteur)
     title?: string;
+    maxPeak?: number | null; // pic global de référence (maintient la même échelle verticale au zoom)
   }
 
-  let { peaks = null, durationS = null, markers = [], mode = 'rhythm', title = "FORME D'ONDE" }: Props = $props();
+  let {
+    peaks = null,
+    durationS = null,
+    markers = [],
+    mode = 'rhythm',
+    title = "FORME D'ONDE",
+    maxPeak = null
+  }: Props = $props();
 
+  const DEFAULT_WIDTH = 1200;
+  const DEFAULT_HEIGHT = 320;
+
+  let wrapperEl = $state<HTMLDivElement | undefined>();
   let canvas = $state<HTMLCanvasElement | undefined>();
+  let canvasWidth = $state(DEFAULT_WIDTH);
+  let canvasHeight = $state(DEFAULT_HEIGHT);
 
   const hasPeaks = $derived(!!peaks && peaks.length >= 2);
   const modeLabel = $derived(mode === 'key' ? 'CLEF' : 'RYTHME');
@@ -34,33 +48,79 @@
     return `${Math.round(pct * 100) / 100}%`;
   }
 
-  // Dessin statique (pas de boucle rAF) : une barre min/max par colonne, axe médian cuivré.
+  // Adaptation automatique de la résolution du canevas lorsque la taille du composant change.
   $effect(() => {
-    if (!canvas || !hasPeaks || !peaks) return;
+    if (!wrapperEl || typeof ResizeObserver === 'undefined') return;
+    const updateSize = (w: number, h: number) => {
+      const nextW = Math.round(w);
+      const nextH = Math.round(h);
+      if (nextW > 0 && nextH > 0) {
+        if (canvasWidth !== nextW) canvasWidth = nextW;
+        if (canvasHeight !== nextH) canvasHeight = nextH;
+      }
+    };
+    updateSize(wrapperEl.clientWidth, wrapperEl.clientHeight);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const cr = entry.contentRect;
+        updateSize(cr?.width || wrapperEl?.clientWidth || 0, cr?.height || wrapperEl?.clientHeight || 0);
+      }
+    });
+    ro.observe(wrapperEl);
+    return () => ro.disconnect();
+  });
+
+  // Dessin statique (pas de boucle rAF) : crêtes + corps énergétique par colonne, axe médian cuivré.
+  $effect(() => {
+    const width = canvasWidth || canvas?.width || DEFAULT_WIDTH;
+    const height = canvasHeight || canvas?.height || DEFAULT_HEIGHT;
+    if (!canvas || !hasPeaks || !peaks || width <= 0 || height <= 0) return;
     try {
+
+      const layout = computeWaveformBars(peaks, width, height, {
+        marginRatio: WAVEFORM_MARGIN_RATIO,
+        referencePeak: maxPeak
+      });
+
+      // Expose les métriques géométriques calculées sur le DOM (vérifiables en test unitaire)
+      let minY = layout.mid;
+      let maxY = layout.mid;
+      for (const b of layout.bars) {
+        if (b.yTop < minY) minY = b.yTop;
+        if (b.yBot > maxY) maxY = b.yBot;
+      }
+      canvas.dataset.peak = String(layout.peak);
+      canvas.dataset.scale = String(layout.scale);
+      canvas.dataset.midY = String(layout.mid);
+      canvas.dataset.marginPx = String(layout.marginPx);
+      canvas.dataset.minY = String(minY);
+      canvas.dataset.maxY = String(maxY);
+      canvas.dataset.bars = String(layout.bars.length);
+
       const ctx = canvas.getContext('2d');
-      if (!ctx) return; // jsdom sans paquet canvas : le rendu DOM suffit aux tests
-      const { width, height } = canvas;
-      if (width <= 0 || height <= 0) return;
-      const cols = peaks.length / 2;
-      const mid = height / 2;
-      // Échelle verticale globale, mesurée sur le signal réel : le pic le plus haut
-      // atteint 93 % de la demi-hauteur (marge de 7 % en haut et en bas, symétrique).
-      // Aucun clamping : `peak` est le max absolu, donc max*scale <= mid*0.93 < mid.
-      const peak = peakAmplitude(peaks);
-      const scale = peak > 0 ? (mid * 0.93) / peak : 0;
-      const step = width / cols;
+      if (!ctx) return; // jsdom sans contexte 2D : les attributs dataset suffisent
+
+      const { mid, bars } = layout;
       ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = '#101216';
       ctx.fillRect(0, 0, width, height);
+
+      // Passe 1 : enveloppe complète (crêtes positives et négatives) en orange #FFB300
       ctx.fillStyle = '#FFB300';
-      for (let c = 0; c < cols; c++) {
-        const min = peaks[2 * c];
-        const max = peaks[2 * c + 1];
-        const yTop = mid - max * scale;
-        const yBot = mid - min * scale;
-        ctx.fillRect(c * step, yTop, Math.max(1, step - 0.5), Math.max(1, yBot - yTop));
+      ctx.globalAlpha = 0.78;
+      for (let i = 0; i < bars.length; i++) {
+        const b = bars[i];
+        ctx.fillRect(b.x, b.yTop, b.width, b.height);
       }
+
+      // Passe 2 : cœur énergétique dense autour de l'axe médian en orange #FFB300 pleine intensité
+      ctx.globalAlpha = 1;
+      for (let i = 0; i < bars.length; i++) {
+        const b = bars[i];
+        ctx.fillRect(b.x, b.coreTop, b.width, b.coreHeight);
+      }
+
+      // Axe horizontal médian cuivré
       ctx.strokeStyle = '#C87D55';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -87,13 +147,13 @@
     </span>
   </div>
 
-  <div class="aw-bezel-glass canvas-wrapper">
+  <div class="aw-bezel-glass canvas-wrapper" bind:this={wrapperEl}>
     {#if hasPeaks}
       <canvas
         bind:this={canvas}
         data-testid="waveform-canvas"
-        width="1200"
-        height="320"
+        width={canvasWidth}
+        height={canvasHeight}
         aria-label="Forme d'onde {title}"
       ></canvas>
       <div class="markers">
