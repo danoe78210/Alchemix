@@ -323,7 +323,7 @@
   <main class="flex-1 min-h-0 p-6 flex flex-col gap-4 overflow-y-auto">
     {#if loaded && workDir}
       <!-- Navigation interne du module : deux onglets pour économiser la hauteur d'écran -->
-      <nav class="tabs" role="tablist" aria-label="Étapes du Module 2">
+      <div class="tabs" role="tablist" aria-label="Étapes du Module 2">
         <button
           type="button"
           role="tab"
@@ -344,7 +344,7 @@
         >
           Séparation
         </button>
-      </nav>
+      </div>
 
       {#if job?.simulated}
         <p data-testid="simulation-banner" role="status" class="text-xs font-bold text-amber-400 border border-amber-700 rounded px-3 py-2">
