@@ -43,8 +43,8 @@ Ce fichier est destiné à un environnement **Claude Code dont le modèle actif 
 
 ### Stack technique déclarée
 
-- Audio natif : C++20, JUCE 8, ASIO/CoreAudio, buffers et structures adaptées au temps réel.
-- Inférence IA : ONNX Runtime C++ ; DirectML, CoreML ou CUDA/TensorRT selon la plateforme.
+- Audio natif : Rust pour le Module 2 (décodage, inférence, lecture via `cpal` si nécessaire), buffers et structures adaptées au temps réel. C++20/JUCE 8 n'est pas présent dans le dépôt : il ne s'applique qu'à un futur moteur de mixage, après décision explicite.
+- Inférence IA : crate `ort` (ONNX Runtime, Rust) ; DirectML, CoreML ou CUDA/TensorRT selon la plateforme.
 - Application desktop : Tauri 2 / Rust.
 - Interface : Svelte 5 et TypeScript.
 - Affichage audio : WebGPU ou WebGL 2.0.
@@ -60,6 +60,8 @@ Ces directives prioritaires permettent une exécution rapide et fiable des tâch
 - **Directive d'Édition (`Write` vs `Edit`)** : Utilise prioritairement la réécriture complète (`Write`) pour les fichiers de règles et de configuration. Si un outil d'édition partielle (`Edit`) échoue une fois, bascule immédiatement sur `Write` sans boucler.
 
 ## 5. Obligatoire avant toute tâche
+
+0. **Démarre Kanzo** (tableau kanban des cartes d'avancement des tâches, `http://localhost:4242/`) au début de chaque session. Vérifie d'abord s'il répond (`curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/`) ; sinon lance `kanzo --no-open` en arrière-plan. Ne le relance pas s'il tourne déjà.
 
 1. Lis `specifications-Alchemix.md` à la racine du dépôt. Si le fichier est absent, cherche uniquement des variantes évidentes de nom dans le dépôt et indique ce que tu as trouvé.
 2. Inspecte les fichiers concernés, leur appelant/appelé, les tests existants et les conventions voisines.
@@ -133,7 +135,7 @@ Lorsqu'un test, un build ou le comportement applicatif échoue :
 
 Évite les modifications multiples et non liées entre deux observations : elles rendent la cause difficile à isoler. Ne lance pas de commandes destructrices pour « nettoyer » l'environnement sans autorisation explicite.
 
-## 10. Contraintes audio temps réel — C++20/JUCE
+## 10. Contraintes audio temps réel — Rust (et C++20/JUCE si un moteur natif est ajouté)
 
 Dans le callback audio, notamment `processBlock` :
 - N'effectue aucune allocation mémoire dynamique ou opération susceptible de bloquer.
@@ -180,12 +182,12 @@ Utilise cette liste comme carte conceptuelle. Vérifie les implémentations et l
    - Décision GO / NO-GO avec seuil de référence de 60 %.
 2. **AI Stem Separation**
    - BS-RoFormer (voix/mélodique) et HTDemucs v4 (batterie/basse), selon la configuration effective.
-   - ONNX Runtime C++ avec backend dépendant de la plateforme.
+   - Crate `ort` (ONNX Runtime, Rust) avec backend dépendant de la plateforme.
 3. **Warping, auto-looping et découpage aux frontières de phrases.**
 4. **Hôte de plugins VST3/CLAP/AU et carving fréquentiel dynamique (1–3 kHz).**
 5. **Arrangement multipiste, console de mixage et export.**
 6. **Interface Svelte 5, shaders WebGPU et pad de slicing 4×4.**
-7. **Socle natif C++20/JUCE 8 et Tauri 2/Rust.**
+7. **Socle natif Tauri 2 / Rust** (pipeline Module 2 inclus). C++20/JUCE 8 : non présent dans le dépôt.
 8. **Persistance de session `.mashup` (archive Zstandard ZIP64 + JSON), selon l'implémentation existante.**
 
 ### Référence de score Camelot
@@ -215,7 +217,12 @@ python C:\Dev\Alchemix\protoype\module1-camelot-engine-v2.py
 python C:\Dev\Alchemix\protoype\module2-stem-engine.py
 ```
 
-### C++ / JUCE
+### Rust (pipeline natif, Module 2)
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+### C++ / JUCE (référence future : aucun CMakeLists.txt dans le dépôt)
 ```bash
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
@@ -246,6 +253,18 @@ Si la tâche modifie le comportement, l'architecture, les interfaces, les fichie
 Pour une question, une analyse sans modification, ou un changement purement local sans effet sur les spécifications, ne modifie pas le document artificiellement.
 
 Ne présente jamais une tâche comme réussie avant d'avoir effectué les vérifications pertinentes. Si le build ou les tests échouent, documente l'échec et n'écris pas un statut de succès.
+
+### Suivi des tâches (Kanzo)
+
+- Projet Kanzo : `alchemix`. Endpoint MCP HTTP : `http://localhost:4242/mcp` (outils : `list_tasks`, `get_task`, `update_task`, `add_comment`, `create_task`).
+- Mettre le statut à jour **en temps réel**, pas en fin de session :
+  - `doing` au démarrage d'une tâche du registre (`specs/001-module1-audio-analysis/tasks-module1.md` ou `tasks.md`) ;
+  - `review` quand le code et les tests sont faits mais qu'une vérification visuelle ou utilisateur reste à faire ;
+  - `done` seulement après vérification ou validation explicite de l'utilisateur.
+- Ne jamais passer `done` une tâche non vérifiée. Les cartes « human » ne changent de statut que si l'utilisateur le demande.
+- Avant de créer une carte, lister les tâches avec `list_tasks` (projet `alchemix`, statut `all`) pour éviter les doublons.
+- Ajouter un commentaire (`add_comment`) qui dit ce qui a été fait et ce qui reste non vérifié. Garder le texte simple, sans guillemets imbriqués : ces appels échouent silencieusement.
+- Si l'API Kanzo ne répond pas, le signaler à l'utilisateur sans bloquer le travail.
 
 ## 16. Notifications sonores TTS
 

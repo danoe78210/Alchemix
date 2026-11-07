@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlcheMix Studio — Module 2 · Démixage IA (prototype)</title>
+  <!-- Tokens et composants réels du projet (Module 1) : pas de palette dupliquée -->
+  <link rel="stylesheet" href="../../../frontend/src/lib/styles/venetian-steampunk.css" />
+  <style>
+    /* Mise en page du prototype uniquement : le thème projet verrouille html/body à 100vh */
+    html, body { height: auto; overflow: auto; }
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px; padding: 0 20px;
+      background: linear-gradient(180deg, #8C5335 0%, #4A2B1B 100%);
+      border-bottom: 2px solid #3A2218;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.18em; color: #121316; text-shadow: 0 1px 0 rgba(255,255,255,0.3); }
+    .modnav { display: flex; gap: 6px; }
+    .modnav span {
+      font-size: 0.7rem; letter-spacing: 0.12em; padding: 6px 12px; border-radius: 4px;
+      color: #E0B88A; border: 1px solid transparent;
+    }
+    .modnav span.active { background: #121316; border-color: #C87D55; color: #FFB300; }
+    .modnav span.inactive { opacity: 0.55; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      align-items: start;
+      align-content: start;
+      gap: 10px;
+      padding: 10px;
+      flex: 1;
+    }
+    .col-wave { grid-column: span 9; }
+    .col-job { grid-column: span 3; }
+    .col-rack { grid-column: 1 / -1; }
+    @media (max-width: 1023px) {
+      .col-wave, .col-job { grid-column: 1 / -1; }
+    }
+
+    .panel-body { padding: 12px 14px 14px; background: var(--aw-panel); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; }
+    .panel-head .aw-panel-title { display: flex; align-items: center; }
+    .file { font-size: 0.75rem; color: var(--aw-text-muted); font-style: italic; }
+
+    /* Règle temporelle en or, comme les lignes de grille du projet */
+    .ruler { position: relative; height: 18px; margin: 8px 0 4px; font-size: 0.65rem; color: var(--aw-gold); font-family: var(--led-font); }
+    .ruler span { position: absolute; transform: translateX(-50%); }
+
+    .lanes { position: relative; display: flex; flex-direction: column; gap: 4px; }
+    .lane { position: relative; height: 84px; }
+    .lane canvas { display: block; width: 100%; height: 100%; transition: opacity 0.2s; }
+    .lane.dim canvas { opacity: 0.25; }
+    .lane-tag {
+      position: absolute; left: 56px; top: 6px; font-size: 0.62rem; font-weight: 800;
+      letter-spacing: 0.12em; color: #121316; padding: 1px 6px; border-radius: 3px;
+    }
+    /* Play et Pause à gauche de chaque stem */
+    .lane-ctrl { position: absolute; left: 6px; top: 4px; bottom: 4px; display: flex; gap: 4px; align-items: center; }
+    /* Commandes de stem : Play au-dessus, Pause en dessous, boutons ronds à anneau bronze */
+    .lane-ctrl { position: absolute; left: 8px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+    .lane-ctrl .btn {
+      width: 34px; height: 34px; min-width: 0; padding: 0; border-radius: 50%;
+      display: grid; place-items: center;
+      background: radial-gradient(circle at 35% 30%, #5A3A22 0%, #2A1A10 60%, #0E0A07 100%);
+      border: 3px solid #A8703F;
+      box-shadow: 0 0 0 1px #3A2218, 0 3px 6px rgba(0, 0, 0, 0.7), inset 0 1px 2px rgba(224, 184, 138, 0.4);
+      color: #E0B88A;
+    }
+    .lane-ctrl .btn svg { width: 14px; height: 14px; fill: currentColor; }
+    .lane-ctrl .btn:hover:not(:disabled) { border-color: #CD7F32; color: #FFD9A8; }
+    .lane-ctrl .btn[aria-pressed="true"] {
+      border-color: #E0B88A; color: #FFD9A8;
+      box-shadow: 0 0 0 1px #3A2218, 0 0 12px rgba(205, 127, 50, 0.7), inset 0 1px 2px rgba(224, 184, 138, 0.5);
+    }
+    .lane-ctrl .btn:disabled { opacity: 0.35; }    .lane-ctrl .btn[aria-pressed="true"] { border-color: #CD7F32; color: #FFD9A8; box-shadow: inset 0 1px 0 rgba(205, 127, 50, 0.6), 0 0 10px rgba(205, 127, 50, 0.5); }
+    .lane-ctrl .btn:disabled { opacity: 0.35; }
+    .playhead {
+      position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+      background: var(--aw-gold); box-shadow: 0 0 10px var(--aw-gold-glow); pointer-events: none;
+    }
+    .transport { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+    .listen-led { font-size: 0.7rem; padding: 4px 10px; min-width: 260px; text-align: center; }
+    .listen-led .aw-led { font-size: 0.8rem; }
+
+    .readouts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .readout { padding: 6px 10px; text-align: center; }
+    .readout .label { display: block; font-size: 0.6rem; letter-spacing: 0.16em; color: var(--aw-copper); }
+    .readout .aw-led { font-size: 1.1rem; }
+
+    .status-led { display: inline-flex; align-items: center; gap: 8px; font-size: 0.7rem; letter-spacing: 0.12em; color: var(--aw-text-muted); }
+    .status-led::before {
+      content: ""; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--aw-text-muted); box-shadow: 0 0 6px currentColor;
+    }
+    .status-led.running { color: var(--aw-emerald); }
+    .status-led.running::before { background: var(--aw-emerald); }
+    .status-led.done { color: var(--aw-gold); }
+    .status-led.done::before { background: var(--aw-gold); }
+
+    .job-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; font-size: 0.8rem; }
+    .job-row b { color: var(--aw-gold); font-family: var(--led-font); }
+    .source-card { border-left: 3px solid var(--aw-copper); padding: 8px 10px; background: var(--aw-panel-inset); margin-bottom: 12px; font-size: 0.8rem; }
+    .source-card small { display: block; color: var(--aw-text-muted); margin-top: 2px; }
+
+    .progress-value { font-family: var(--led-font); font-size: 0.8rem; color: var(--aw-gold); min-width: 42px; text-align: right; }
+    .progress-row { display: flex; align-items: center; gap: 10px; margin: 6px 0 14px; }
+    .progress-row .aw-meter-track { flex: 1; }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      font: inherit; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 8px 12px; border-radius: 4px; cursor: pointer;
+      background: linear-gradient(180deg, #2A2D36 0%, #1A1C22 100%);
+      color: var(--aw-text); border: 1px solid #3A2218;
+      box-shadow: inset 0 1px 0 rgba(224, 184, 138, 0.15), 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+    .btn:hover:not(:disabled) { border-color: var(--aw-copper); }
+    .btn:focus-visible { outline: 2px solid var(--aw-emerald); outline-offset: 2px; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary {
+      background: linear-gradient(180deg, #C87D55 0%, #8C4A27 100%);
+      color: #121316; border-color: #E69D75; flex: 1;
+    }
+    .btn.primary:hover:not(:disabled) { box-shadow: 0 0 14px rgba(200, 125, 85, 0.5); }
+
+    /* Rack des stems : quatre tranches côte à côte */
+    .rack { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .strip { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 12px; }
+    .strip-info { display: flex; flex-direction: column; gap: 4px; }
+    .strip-name { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.14em; }
+    .strip-band { font-size: 0.62rem; color: var(--aw-text-muted); letter-spacing: 0.04em; }
+    .strip-body { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: stretch; }
+    .vu { display: flex; flex-direction: column; gap: 3px; height: 150px; }
+    .vu .aw-meter-track { flex: 1; width: 100%; }
+    .vu .aw-meter-fill { position: absolute; left: 0; right: 0; bottom: 0; }
+    .fader-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .fader { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 130px; accent-color: var(--aw-copper); cursor: pointer; }
+    .fader:focus-visible { outline: 2px solid var(--aw-emerald); outline-offset: 2px; }
+    .db { min-width: 78px; text-align: center; padding: 3px 6px; font-size: 0.8rem; }
+    .toggles { display: flex; gap: 6px; }
+    .toggles .btn { padding: 6px 10px; font-size: 0.66rem; }
+    .toggles .btn[aria-pressed="true"][data-act="solo"] { background: var(--aw-gold); color: #121316; border-color: var(--aw-gold); box-shadow: 0 0 12px var(--aw-gold-glow); }
+    .toggles .btn[aria-pressed="true"][data-act="mute"] { background: #FF3D00; color: #121316; border-color: #FF3D00; }
+
+    .sim-badge { font-size: 0.66rem; color: var(--aw-sapphire); border: 1px dashed var(--aw-sapphire); padding: 3px 8px; border-radius: 4px; letter-spacing: 0.1em; }
+
+    dialog {
+      background: var(--aw-panel); color: var(--aw-text); border: 2px solid var(--aw-copper);
+      border-radius: 6px; padding: 18px; width: min(440px, 92vw); box-shadow: var(--aw-panel-shadow);
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+    .mode-card {
+      display: grid; grid-template-columns: 22px 1fr; gap: 4px 10px; padding: 12px; margin-bottom: 10px;
+      border: 1px solid var(--aw-border); border-radius: 4px; background: var(--aw-panel-inset); cursor: pointer;
+    }
+    .mode-card:has(input:checked) { border-color: var(--aw-copper-light); box-shadow: var(--aw-shadow); }
+    .mode-card input { accent-color: var(--aw-copper); margin-top: 3px; }
+    .mode-card strong { font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .mode-card small { grid-column: 2; color: var(--aw-text-muted); font-size: 0.75rem; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="copper-strip"></span>
+      ALCHEMIX STUDIO
+    </div>
+    <nav class="modnav" aria-label="Modules">
+      <span class="inactive">MODULE 1 · CADRAN CAMELOT</span>
+      <span class="active">MODULE 2 · DÉMIXAGE IA</span>
+      <span class="inactive">MODULE 3 · WARPING &amp; MASHUP</span>
+      <span class="inactive">MODULE 4 · MASTERING</span>
+    </nav>
+    <span class="aw-badge">MK-IV · PROTOTYPE</span>
+  </header>
+
+  <main class="grid">
+    <section class="aw-panel col-wave" aria-labelledby="wave-title">
+      <div class="aw-header">
+        <div class="panel-head" style="width:100%">
+          <h2 class="aw-panel-title" id="wave-title"><span class="copper-strip"></span>Formes d'onde des stems</h2>
+          <em class="file" id="file-name">13. Ensemble.mp3</em>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="transport">
+          <div class="aw-led-screen listen-led"><span class="aw-led" id="listen-state">AUCUN STEM EN LECTURE</span></div>
+        </div>
+        <div class="aw-bezel" style="padding:6px">
+          <div class="lanes" id="lanes"></div>
+        </div>
+        <div class="ruler" id="ruler"></div>
+        <div class="readouts">
+          <div class="aw-led-screen readout"><span class="label">TONALITÉ</span><span class="aw-led">C MINOR</span></div>
+          <div class="aw-led-screen readout"><span class="label">BPM</span><span class="aw-led" id="bpm">116.3</span></div>
+          <div class="aw-led-screen readout"><span class="label">POSITION</span><span class="aw-led" id="position">00:00.0</span></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="aw-panel col-job" aria-labelledby="job-title">
+      <div class="aw-header">
+        <h2 class="aw-panel-title" id="job-title"><span class="copper-strip"></span>Tâche de démixage</h2>
+      </div>
+      <div class="panel-body">
+        <div class="source-card">
+          13. Ensemble.mp3
+          <small>Importé directement dans le Module 2</small>
+        </div>
+        <div class="actions" style="margin-bottom:10px">
+          <button class="btn" id="import" type="button">Importer un fichier…</button>
+        </div>
+        <div class="job-row"><span>Mode</span><b id="mode-label">PERFORMANCE</b></div>
+        <div class="job-row"><span>Statut</span><span class="status-led" id="status">EN ATTENTE</span></div>
+        <div class="progress-row">
+          <div class="aw-meter-track"><div class="aw-meter-fill" id="progress-bar" style="width:0%"></div></div>
+          <span class="progress-value" id="progress-label">0 %</span>
+        </div>
+        <div class="actions" style="margin-bottom:10px">
+          <button class="btn" id="open-quality" type="button">Qualité…</button>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="start" type="button">Démixer</button>
+          <button class="btn" id="cancel" type="button" disabled>Annuler</button>
+        </div>
+        <p style="margin:14px 0 0"><span class="sim-badge">SIMULATION · ONNX NON BRANCHÉ</span></p>
+      </div>
+    </aside>
+
+    <section class="aw-panel col-rack" aria-labelledby="rack-title">
+      <div class="aw-header">
+        <h2 class="aw-panel-title" id="rack-title"><span class="copper-strip"></span>Rack des stems</h2>
+      </div>
+      <div class="panel-body">
+        <div class="rack" id="rack"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="quality" aria-labelledby="quality-title">
+    <h2 class="aw-panel-title" id="quality-title" style="margin-bottom:12px">Qualité de séparation</h2>
+    <label class="mode-card">
+      <input type="radio" name="mode" value="Performance" checked />
+      <strong>Mode Performance</strong>
+      <small>Passe rapide, adapté à la préparation en direct.</small>
+    </label>
+    <label class="mode-card">
+      <input type="radio" name="mode" value="Studio" />
+      <strong>Mode Studio</strong>
+      <small>Multi-passe haute résolution, plus long.</small>
+    </label>
+    <div class="dialog-actions">
+      <button class="btn" id="quality-cancel" type="button">Annuler</button>
+      <button class="btn primary" id="quality-ok" type="button">Valider</button>
+    </div>
+  </dialog>
+
+  <script>
+    // Couleurs des tokens du projet : or = graves, émeraude = médiums/voix, saphir = aigus
+    const TOKENS = {
+      gold: "#FFB300",
+      emerald: "#00E676",
+      sapphire: "#29B6F6",
+      copper: "#C87D55",
+      inset: "#252830",
+    };
+    // Quatre stems : affectation des couleurs selon la charte de fréquence
+    const STEMS = [
+      { name: "VOIX", band: "Médiums · 250 Hz – 4 kHz", color: TOKENS.emerald, level: 62, seed: 11 },
+      { name: "BATTERIE", band: "Kicks · cymbales", color: TOKENS.sapphire, level: 78, seed: 23 },
+      { name: "BASSE", band: "Sub-bass · < 250 Hz", color: TOKENS.gold, level: 55, seed: 37 },
+      { name: "AUTRES", band: "Instruments · aigus", color: TOKENS.copper, level: 47, seed: 53 },
+    ];
+    const DURATION_S = 283.1;     // durée fictive du fichier
+    const PLAYHEAD_RATIO = 0.42;  // position initiale du repère de lecture
+
+    // Générateur pseudo-aléatoire déterministe : formes d'onde reproductibles
+    function rng(seed) {
+      let s = seed;
+      return () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    }
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      return `${String(m).padStart(2, "0")}:${(sec % 60).toFixed(1).padStart(4, "0")}`;
+    }
+
+    // Enveloppe fictive : sections actives et silences pour imiter la structure d'un morceau
+    function drawLane(canvas, stem) {
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#08090C";
+      ctx.fillRect(0, 0, w, h);
+
+      // Ligne centrale discrète
+      ctx.fillStyle = "rgba(200, 125, 85, 0.18)";
+      ctx.fillRect(0, h / 2, w, 1);
+
+      const rand = rng(stem.seed);
+      const mid = h / 2;
+      const bars = Math.floor(w / 2);
+      ctx.fillStyle = stem.color;
+      for (let i = 0; i < bars; i++) {
+        const t = i / bars;
+        const section = Math.sin(t * Math.PI * 7 + stem.seed) > -0.35 ? 1 : 0.15;
+        const amp = (0.2 + rand() * 0.8) * section * (stem.level / 100);
+        const half = Math.max(1, amp * mid);
+        ctx.fillRect(i * 2, mid - half, 1.2, half * 2);
+      }
+    }
+
+    // Lanes des formes d'onde : Play et Pause à gauche, nom du stem ensuite
+    const lanesEl = document.getElementById("lanes");
+    lanesEl.style.position = "relative";
+    STEMS.forEach((stem) => {
+      const lane = document.createElement("div");
+      lane.className = "lane";
+      lane.innerHTML = `<canvas aria-hidden="true"></canvas>
+        <div class="lane-ctrl">
+          <button class="btn" data-act="play" type="button" aria-label="Lecture ${stem.name}">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l10 6-10 6z"/></svg>
+          </button>
+          <button class="btn" data-act="pause" type="button" aria-label="Pause ${stem.name}" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12"/><rect x="9.5" y="2" width="3.5" height="12"/></svg>
+          </button>
+        </div>
+        <span class="lane-tag" style="background:${stem.color}">${stem.name}</span>`;
+      lanesEl.appendChild(lane);
+    });
+    const playhead = document.createElement("div");
+    playhead.className = "playhead";
+    lanesEl.appendChild(playhead);
+
+    // Règle temporelle toutes les 30 s
+    const ruler = document.getElementById("ruler");
+    for (let t = 0; t <= DURATION_S; t += 30) {
+      const tick = document.createElement("span");
+      tick.style.left = `${(t / DURATION_S) * 100}%`;
+      tick.textContent = formatTime(t).replace(/\.\d$/, "");
+      ruler.appendChild(tick);
+    }
+
+    function renderWaves() {
+      lanesEl.querySelectorAll("canvas").forEach((c, i) => drawLane(c, STEMS[i]));
+    }
+    window.addEventListener("resize", renderWaves);
+    renderWaves();
+
+    // Lecture par stem : chaque stem joue seul ou avec d'autres. Le repère suit la lecture
+    const positionLed = document.getElementById("position");
+    const listenLed = document.getElementById("listen-state");
+    const playing = new Set();
+    let position = PLAYHEAD_RATIO * DURATION_S;
+    let lastFrame = null;
+
+    function setPosition(sec) {
+      position = Math.min(DURATION_S, Math.max(0, sec));
+      playhead.style.left = `${(position / DURATION_S) * 100}%`;
+      positionLed.textContent = formatTime(position);
+    }
+    function tick(now) {
+      if (playing.size === 0) {
+        lastFrame = null;
+        return;
+      }
+      if (lastFrame !== null) setPosition(position + (now - lastFrame) / 1000);
+      lastFrame = now;
+      requestAnimationFrame(tick);
+    }
+    // Quand des stems jouent, les autres s'estompent pour montrer ce qui est audible
+    function refreshLane(index) {
+      const lane = lanesEl.querySelectorAll(".lane")[index];
+      const on = playing.has(index);
+      lane.querySelector('[data-act="play"]').disabled = on;
+      lane.querySelector('[data-act="pause"]').disabled = !on;
+      lane.querySelector('[data-act="play"]').setAttribute("aria-pressed", String(on));
+      lane.classList.toggle("dim", playing.size > 0 && !on);
+    }
+    function refreshAll() {
+      STEMS.forEach((_, i) => refreshLane(i));
+      const names = STEMS.filter((_, i) => playing.has(i)).map((s) => s.name);
+      listenLed.textContent = names.length ? `EN LECTURE : ${names.join(" + ")}` : "AUCUN STEM EN LECTURE";
+    }
+    lanesEl.querySelectorAll(".lane").forEach((lane, index) => {
+      lane.querySelector('[data-act="play"]').addEventListener("click", () => {
+        playing.add(index);
+        refreshAll();
+        if (lastFrame === null) requestAnimationFrame(tick);
+      });
+      lane.querySelector('[data-act="pause"]').addEventListener("click", () => {
+        playing.delete(index);
+        refreshAll();
+      });
+    });
+    setPosition(position);
+    refreshAll();
+
+    // Rack : une tranche par stem (fader, VU, Solo, Mute)
+    const rack = document.getElementById("rack");
+    const DB_REF = 80; // valeur de fader correspondant à 0 dB
+    STEMS.forEach((stem) => {
+      const el = document.createElement("article");
+      el.className = "aw-bezel strip";
+      el.style.borderColor = stem.color;
+      el.innerHTML = `
+        <div class="strip-info">
+          <span class="copper-strip" style="background:${stem.color};box-shadow:0 0 8px ${stem.color};height:14px;width:3px"></span>
+        </div>
+        <div>
+          <div class="strip-name" style="color:${stem.color}">${stem.name}</div>
+          <div class="strip-band">${stem.band}</div>
+          <div class="strip-body" style="margin-top:10px">
+            <div class="vu">
+              <div class="aw-meter-track" style="position:relative;height:100%">
+                <div class="aw-meter-fill" style="height:${stem.level}%"></div>
+              </div>
+            </div>
+            <div class="fader-wrap">
+              <input class="fader" type="range" min="0" max="100" value="${DB_REF}"
+                aria-label="Volume ${stem.name}" />
+              <div class="aw-led-screen db"><span class="aw-led" data-db>0.0 dB</span></div>
+              <div class="toggles">
+                <button class="btn" data-act="solo" aria-pressed="false" type="button">Solo</button>
+                <button class="btn" data-act="mute" aria-pressed="false" type="button">Mute</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      const fader = el.querySelector(".fader");
+      const dbLabel = el.querySelector("[data-db]");
+      const updateDb = () => {
+        const db = fader.value == 0 ? "-∞" : (20 * Math.log10(fader.value / DB_REF)).toFixed(1);
+        dbLabel.textContent = `${db} dB`;
+      };
+      fader.addEventListener("input", updateDb);
+      updateDb();
+      el.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const on = btn.getAttribute("aria-pressed") !== "true";
+          btn.setAttribute("aria-pressed", String(on));
+        });
+      });
+      rack.appendChild(el);
+    });
+
+    // Tâche de démixage : simulation de progression
+    const state = { mode: "Performance", timer: null, progress: 0 };
+    const quality = document.getElementById("quality");
+    const modeLabel = document.getElementById("mode-label");
+    const bar = document.getElementById("progress-bar");
+    const label = document.getElementById("progress-label");
+    const statusEl = document.getElementById("status");
+    const startBtn = document.getElementById("start");
+    const cancelBtn = document.getElementById("cancel");
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = `status-led ${cls || ""}`;
+    }
+    function setProgress(p) {
+      state.progress = p;
+      bar.style.width = `${p}%`;
+      label.textContent = `${Math.round(p)} %`;
+    }
+    function stop(reset) {
+      clearInterval(state.timer);
+      startBtn.disabled = false;
+      cancelBtn.disabled = true;
+      if (reset) {
+        setProgress(0);
+        setStatus("ANNULÉ");
+      }
+    }
+
+    document.getElementById("open-quality").addEventListener("click", () => quality.showModal());
+    document.getElementById("quality-cancel").addEventListener("click", () => quality.close());
+    document.getElementById("quality-ok").addEventListener("click", () => {
+      state.mode = quality.querySelector("input[name=mode]:checked").value;
+      modeLabel.textContent = state.mode.toUpperCase();
+      quality.close();
+    });
+
+    startBtn.addEventListener("click", () => {
+      startBtn.disabled = true;
+      cancelBtn.disabled = false;
+      setStatus("EN COURS", "running");
+      state.timer = setInterval(() => {
+        const next = state.progress + (state.mode === "Studio" ? 2 : 6);
+        if (next >= 100) {
+          setProgress(100);
+          stop(false);
+          setStatus("TERMINÉ (SIMULATION)", "done");
+        } else {
+          setProgress(next);
+        }
+      }, 300);
+    });
+    cancelBtn.addEventListener("click", () => stop(true));
+  </script>
+</body>
+</html>
