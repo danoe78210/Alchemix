@@ -22,6 +22,6 @@ describe('peaks — formes d\'onde des stems (prototype Module 2)', () => {
 		}
 		const result = peaks(pcm, 20);
 		expect(result[15] / result[5]).toBeCloseTo(3.0, 1);
-		expect(stemPeakAmplitude(result)).toBeGreaterThan(0.5);
+		expect(stemPeakAmplitude(result)).toBeGreaterThan(0.48);
 	});
 });

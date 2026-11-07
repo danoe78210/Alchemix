@@ -7,7 +7,7 @@
  *   chacune sur 100 % des échantillons, et retient le max des sous-fenêtres afin de
  *   préserver les attaques (batterie, basse) tout en évitant l'effet de bloc rectangulaire.
  */
-const MACRO_BIN_THRESHOLD = 64;
+const MACRO_BIN_THRESHOLD = 256;
 
 /** Crête de `bins` tranches de `samples` ; chaque échantillon appartient à au moins une tranche. */
 export function peaks(samples, bins) {
@@ -29,19 +29,22 @@ export function peaks(samples, bins) {
 			out[b] = peak;
 			continue;
 		}
-		const subWin = Math.max(MACRO_BIN_THRESHOLD, Math.min(1024, Math.floor(len / 8)));
+		const subWin = Math.max(64, Math.min(1024, Math.floor(len / 8)));
 		let binPeak = 0;
+		let sumAbs = 0;
 		for (let ws = start; ws < end; ws += subWin) {
 			const we = Math.min(end, ws + subWin);
 			let sumSq = 0;
 			for (let i = ws; i < we; i++) {
-				const v = samples[i];
+				const v = Math.abs(samples[i]);
+				sumAbs += v;
 				sumSq += v * v;
 			}
 			const rms = Math.sqrt(sumSq / (we - ws));
 			if (rms > binPeak) binPeak = rms;
 		}
-		out[b] = binPeak;
+		const meanAbs = sumAbs / len;
+		out[b] = 0.65 * meanAbs + 0.35 * binPeak;
 	}
 	return out;
 }

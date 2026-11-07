@@ -11,10 +11,10 @@ export const WAVEFORM_MARGIN_RATIO = 0.08;
 
 /**
  * Seuil (en échantillons par colonne et par canal) séparant la vue microscopique
- * (oscillation individuelle, <= 64 éch. ≈ 1,45 ms à 44,1 kHz) de la vue macroscopique
- * (enveloppe multi-cycles d'un morceau complet, > 64 éch.).
+ * (oscillation individuelle, <= 256 éch. ≈ 5,8 ms à 44,1 kHz) de la vue macroscopique
+ * (enveloppe multi-cycles d'un morceau complet, > 256 éch.).
  */
-const MACRO_COLUMN_THRESHOLD = 64;
+const MACRO_COLUMN_THRESHOLD = 256;
 
 /**
  * Min/max par colonne de `channelData` pour `width` colonnes d'affichage.
@@ -35,16 +35,16 @@ export function waveformPeaks(channelData, width, startRatio = 0, endRatio = 1) 
  * plusieurs canaux (mono, stéréo, multicanal), avec support optionnel de fenêtre
  * temporelle `[startRatio, endRatio]` (zoom).
  *
- * - À l'échelle microscopique (`<= 64` échantillons/colonne), conserve le min et le max
+ * - À l'échelle microscopique (`<= 256` échantillons/colonne), conserve le min et le max
  *   exacts échantillon par échantillon sur l'ensemble des canaux.
- * - À l'échelle macroscopique (`> 64` échantillons/colonne, ex. piste complète où chaque
- *   colonne couvre 10 à 250 ms), découpe la colonne en sous-fenêtres acoustiques (~10–20 ms),
- *   calcule dans chacune la moyenne quadratique demi-onde négative et positive sur 100 %
- *   des échantillons de tous les canaux, puis retient la crête négative et positive des
- *   sous-fenêtres. Cela préserve toutes les attaques transitoires (kick, caisse claire)
- *   et toute la dynamique relative (couplets, refrains, silences, fondus) de façon
- *   strictement linéaire, tout en éliminant l'effet de « brique rectangulaire » causé par
- *   les micro-pics isolés d'un limiteur de mastering.
+ * - À l'échelle macroscopique (`> 256` échantillons/colonne, ex. piste complète où chaque
+ *   colonne couvre 10 à 250 ms), combine de façon strictement linéaire (`f(α·x) = α·f(x)`) :
+ *   1. la moyenne demi-onde négative et positive intégrée sur 100 % des échantillons de la
+ *      colonne (65 %), qui restitue fidèlement la dynamique globale (intros, couplets,
+ *      refrains, creux entre les temps, fondus) sans être saturée par les micro-pics ;
+ *   2. la crête de moyenne quadratique (RMS) des sous-fenêtres acoustiques (~10–20 ms) de
+ *      la colonne (35 %), qui restitue distinctement toutes les attaques transitoires
+ *      (batterie, caisse claire, transitoires rythmiques).
  *
  * - `channels` non tableau -> traité comme un seul canal ;
  * - canaux null/vides ignorés ; tous vides -> `2 * width` zéros ;
@@ -94,13 +94,17 @@ export function waveformPeaksMulti(channels, width, startRatio = 0, endRatio = 1
       continue;
     }
 
-    // Vue macroscopique : sous-fenêtres acoustiques (~8 sous-fenêtres par colonne, entre 64 et 1024 éch.)
-    const subWinSize = Math.max(
-      MACRO_COLUMN_THRESHOLD,
-      Math.min(1024, Math.floor(colSamples / 8))
-    );
-    let colMin = Infinity;
-    let colMax = -Infinity;
+    // Vue macroscopique : intégration sur 100 % des échantillons de la colonne + crête par sous-fenêtre
+    const subWinSize = Math.max(64, Math.min(1024, Math.floor(colSamples / 8)));
+    let crestMin = Infinity;
+    let crestMax = -Infinity;
+    let colSumNeg = 0;
+    let colSumPos = 0;
+    let colNegCount = 0;
+    let colPosCount = 0;
+    let colTotalCount = 0;
+    let colRawMin = Infinity;
+    let colRawMax = -Infinity;
 
     for (let ws = start; ws < end; ws += subWinSize) {
       const we = Math.min(end, ws + subWinSize);
@@ -118,36 +122,51 @@ export function waveformPeaksMulti(channels, width, startRatio = 0, endRatio = 1
           const v = ch[i];
           if (v < wMin) wMin = v;
           if (v > wMax) wMax = v;
+          if (v < colRawMin) colRawMin = v;
+          if (v > colRawMax) colRawMax = v;
           if (v < 0) {
             sumNegSq += v * v;
             negCount++;
+            colSumNeg += v;
+            colNegCount++;
           } else if (v > 0) {
             sumPosSq += v * v;
             posCount++;
+            colSumPos += v;
+            colPosCount++;
           }
           totalCount++;
+          colTotalCount++;
         }
       }
 
       if (totalCount === 0 || wMin > wMax) continue;
 
-      // Si la sous-fenêtre contient des alternances négatives, moyenne quadratique demi-onde négative ;
-      // si le signal est purement positif (ex. offset continu +C), conserve wMin (> 0).
       const subMin =
         negCount > 0 ? -Math.sqrt(sumNegSq / totalCount) : posCount > 0 ? wMin : 0;
       const subMax =
         posCount > 0 ? Math.sqrt(sumPosSq / totalCount) : negCount > 0 ? wMax : 0;
 
-      if (subMin < colMin) colMin = subMin;
-      if (subMax > colMax) colMax = subMax;
+      if (subMin < crestMin) crestMin = subMin;
+      if (subMax > crestMax) crestMax = subMax;
     }
 
-    if (colMin > colMax) {
-      colMin = 0;
-      colMax = 0;
+    if (colTotalCount === 0 || crestMin > crestMax) {
+      out[2 * c] = 0;
+      out[2 * c + 1] = 0;
+      continue;
     }
-    out[2 * c] = colMin;
-    out[2 * c + 1] = colMax;
+
+    const meanMin =
+      colNegCount > 0 ? colSumNeg / colTotalCount : colPosCount > 0 ? colRawMin : 0;
+    const meanMax =
+      colPosCount > 0 ? colSumPos / colTotalCount : colNegCount > 0 ? colRawMax : 0;
+
+    // Combinaison linéaire convexe : 65 % corps demi-onde moyen + 35 % crête transitoire
+    const finalMin = 0.65 * meanMin + 0.35 * crestMin;
+    const finalMax = 0.65 * meanMax + 0.35 * crestMax;
+    out[2 * c] = Math.min(finalMin, finalMax);
+    out[2 * c + 1] = Math.max(finalMin, finalMax);
   }
   return out;
 }
