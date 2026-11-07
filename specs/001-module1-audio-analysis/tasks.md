@@ -111,7 +111,7 @@ description: "Task list for Module 1 — Importation Audio, Analyse DSP & Métad
 
 - [x] T015 [P] Ran `npm test` from `C:\Dev\Alchemix`: **7 test files, 51/51 tests passed** (was 48 before the 3 new worker/reset tests) — 100 % green (SC-001)
 - [ ] T016 **Build final manuel (hors exécution automatique)** : le build de production Vite (`npx vite build` / `npm run build` depuis `C:\Dev\Alchemix`, sortie `dist/`) est exécuté **manuellement par l'utilisateur**, pas automatiquement par l'agent. Critère : compilation sans erreur (SC-002).
-- [ ] T017 [P] Run `quickstart.md` manual validation scenarios US1–US4 in `npm run dev` (Vite port 5173): two-deck load, Gatekeeper verdicts, ID3 cards, export buttons, quit-and-clean
+- [x] T017 [P] Run `quickstart.md` manual validation scenarios US1–US4 in `npm run dev` (Vite port 5173): two-deck load, Gatekeeper verdicts, ID3 cards, export buttons, quit-and-clean — **validée et clôturée par l'utilisateur (2026-11-03)** ; aucune exécution automatisée par l'agent (navigateur refusé pendant la session)
 - [ ] T018 [P] Update `specifications-Alchemix.md` if any behavior/interface changed, per project rules
 
 ---

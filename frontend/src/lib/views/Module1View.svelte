@@ -10,13 +10,24 @@
   import TempoDisplay from '../components/TempoDisplay.svelte';
   import CamelotWheel from '../components/CamelotWheel.svelte';
   import CamelotCompatibility from '../components/CamelotCompatibility.svelte';
+
+  let { onSelectModule = null } = $props();
   import MixAdvisor from '../components/MixAdvisor.svelte';
   import MetadataModal from '../components/MetadataModal.svelte';
-  import { parseID3Tags, detectBPMKey, analyzeMetadata, resetAudioEngine, resolveTempo, KEY_CONFIDENCE_MIN } from '../audioEngine.js';
+  import WaveformView from '../components/WaveformView.svelte';
+  import WaveformControls from '../components/WaveformControls.svelte';
+  import { waveformPeaksMulti, changeMarkers } from '../waveform.js';
+  import { parseID3Tags, detectBPMKey, analyzeMetadata, resetAudioEngine, resolveTempo, KEY_CONFIDENCE_MIN, analyzeSegments } from '../audioEngine.js';
   import { fetchFallbackCover } from '../services/metadataService.js';
   import { compatibilityBetween, keyInfo, camelotFromKeyName } from '../camelot.js';
   import { createDeckPlayer } from '../services/deckPlayer.js';
   import { onDestroy } from 'svelte';
+
+  interface WaveData {
+    peaks: Float32Array | null; // min/max par colonne (waveformPeaks)
+    durationS: number;
+    segments: unknown[]; // [{ startS, bpm, key, ... }] (analyzeSegments)
+  }
 
   interface Track {
     id: 'A' | 'B';
@@ -34,10 +45,12 @@
     tempoConfidence: number | null;
     tempoRegularity: number | null;
     keyConfidence: number | null;
+    wave: WaveData | null; // forme d'onde + analyse par segments (alchemix#44, M6)
+    isWaveLoading: boolean;
   }
 
   function emptyTrack(id: 'A' | 'B'): Track {
-    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null, keyConfidence: null };
+    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null, keyConfidence: null, wave: null, isWaveLoading: false };
   }
 
   let trackA = $state<Track>(emptyTrack('A'));
@@ -63,6 +76,14 @@
   let analysisDone = $state(false);
   let fileInputA = <HTMLInputElement | null>(null);
   let fileInputB = <HTMLInputElement | null>(null);
+
+  // Panneau forme d'onde A/B (alchemix#44, M6) : piste affichée + mode de marqueurs
+  const WAVEFORM_WIDTH = 1200; // colonnes d'affichage de la forme d'onde
+  const SEGMENT_SECONDS = 30; // fenêtre d'analyse par segments (detectBPM/detectKey)
+  let waveTrack = $state<'A' | 'B'>('A');
+  let waveMode = $state<'rhythm' | 'key'>('rhythm');
+  const waveTrackData = $derived(waveTrack === 'A' ? trackA : trackB);
+  const waveMarkers = $derived(changeMarkers((waveTrackData.wave?.segments ?? []) as any[], waveMode));
 
   const countLoaded = $derived((trackA.file ? 1 : 0) + (trackB.file ? 1 : 0));
   const isBothLoaded = $derived(countLoaded === 2);
@@ -96,6 +117,34 @@
       if (fileInputB) fileInputB.value = '';
       fileInputB?.click();
     }
+  }
+
+  /**
+   * Forme d'onde + analyse par segments d'une piste (alchemix#44, M6) :
+   * les peaks sont calculés tout de suite, l'analyse segment-wise est déléguée
+   * au worker DSP via `analyzeSegments` (non bloquante, état `isWaveLoading`).
+   */
+  function loadWaveform(track: Track, audioBuffer: AudioBuffer) {
+    track.isWaveLoading = true;
+    try {
+      // Tous les canaux (mono/stéréo) : l'enveloppe min/max est fusionnée par colonne,
+      // aucune crête d'aucun canal n'est perdue.
+      const channels: Float32Array[] = [];
+      const nCh = audioBuffer.numberOfChannels || 1;
+      for (let c = 0; c < nCh; c++) channels.push(audioBuffer.getChannelData(c));
+      track.wave = { peaks: waveformPeaksMulti(channels, WAVEFORM_WIDTH), durationS: audioBuffer.duration, segments: [] };
+    } catch (err) {
+      console.warn("Forme d'onde indisponible :", err);
+      track.wave = null;
+    }
+    analyzeSegments(audioBuffer, SEGMENT_SECONDS)
+      .then((segments) => {
+        if (track.wave) track.wave = { ...track.wave, segments };
+      })
+      .catch((err) => console.warn('Analyse par segments indisponible :', err))
+      .finally(() => {
+        track.isWaveLoading = false;
+      });
   }
 
   async function handleFileSelected(event: Event, deckId: 'A' | 'B') {
@@ -146,6 +195,9 @@
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioContext = new AudioCtx();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+      // Forme d'onde + marqueurs de changements (alchemix#44) : calcul en arrière-plan
+      loadWaveform(track, audioBuffer);
 
       const dsp = await detectBPMKey(audioBuffer);
       const measured = dsp.bpm === null ? null : { bpm: dsp.bpm, confidence: dsp.confidence, regularity: dsp.regularity };
@@ -327,7 +379,7 @@
     onchange={(e) => handleFileSelected(e, 'B')}
   />
 
-  <HeaderBar appTitle="AlcheMix Studio" />
+  <HeaderBar appTitle="AlcheMix Studio" {onSelectModule} />
 
   <main class="module-container w-full flex-1 min-h-0 p-gutter grid grid-cols-12 gap-gutter overflow-hidden">
     <!-- ═══ COLONNE 1 : DECK A MASTER (AMBRE / OR) ═══ -->
@@ -491,6 +543,30 @@
 
       <!-- Conseils de mix : affichés uniquement quand le Gate est déverrouillé -->
       <MixAdvisor gatekeeper={gatekeeper} compat={compat} timeStretchPercent={timeStretchPercent} />
+
+      <!-- Panneau forme d'onde A/B avec marqueurs de changements de rythme ou de clef (alchemix#44, M6) -->
+      <section data-testid="waveform-section" class="w-full flex-1 min-h-[220px] bg-bg-panel rounded p-space-md flex flex-col gap-space-sm shadow-[0_4px_14px_rgba(0,0,0,0.7)]">
+        <WaveformControls
+          track={waveTrack}
+          mode={waveMode}
+          onTrackChange={(t) => (waveTrack = t)}
+          onModeChange={(m) => (waveMode = m)}
+        />
+        {#if waveTrackData.isWaveLoading}
+          <div class="font-label-sm text-label-sm text-accent-amber-master font-bold animate-pulse" data-testid="waveform-loading">
+            ANALYSE DES SEGMENTS…
+          </div>
+        {/if}
+        <div class="flex-1 min-h-0">
+          <WaveformView
+            peaks={waveTrackData.wave?.peaks ?? null}
+            durationS={waveTrackData.wave?.durationS ?? null}
+            markers={waveMarkers}
+            mode={waveMode}
+            title="PISTE {waveTrack}"
+          />
+        </div>
+      </section>
     </section>
 
     <!-- ═══ COLONNE 3 : DECK B CANDIDATE & GATEKEEPER (ÉMERAUDE) ═══ -->

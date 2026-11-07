@@ -586,6 +586,61 @@ export function analyzeTempoKey(audioBuffer) {
 }
 
 /**
+ * Analyse clef + tempo PAR SEGMENT (micro-tâche M1, alchemix#44) : découpe le PCM mono
+ * en segments de `segmentSeconds` (défaut 30 s) et applique `analyzeTempoKey`
+ * (detectBPM + detectKey) à chacun via un faux AudioBuffer portant sur la tranche.
+ * Renvoie [{ startS, bpm, confidence, regularity, key, keyConfidence }] ;
+ * les tranches de moins de 1 s sont ignorées (detectKey indéterminé en dessous).
+ * Fonction pure synchrone, partagée avec le worker.
+ */
+export function analyzeSegmentsSync(pcm, sampleRate, segmentSeconds = 30) {
+  if (!pcm || !sampleRate || !(segmentSeconds > 0) || pcm.length < sampleRate) return [];
+  const segLen = Math.round(segmentSeconds * sampleRate);
+  const segments = [];
+  for (let start = 0; start < pcm.length; start += segLen) {
+    const slice = pcm.subarray(start, Math.min(start + segLen, pcm.length));
+    if (slice.length < sampleRate) break;
+    const fake = { sampleRate, length: slice.length, getChannelData: () => slice };
+    segments.push({ startS: Math.round((start / sampleRate) * 100) / 100, ...analyzeTempoKey(fake) });
+  }
+  return segments;
+}
+
+/**
+ * Analyse par segments d'un AudioBuffer décodé, déléguée au Web Worker quand il est
+ * disponible (navigateur/Tauri), avec repli synchrone sinon (tests). Le PCM est copié
+ * avant transfert : l'AudioBuffer reste utilisable par l'appelant.
+ */
+export function analyzeSegments(audioBuffer, segmentSeconds = 30) {
+  const worker = getDspWorker();
+  const pcm0 = audioBuffer?.getChannelData?.(0);
+  if (!worker || !audioBuffer || !pcm0) {
+    return Promise.resolve(pcm0 ? analyzeSegmentsSync(pcm0, audioBuffer.sampleRate, segmentSeconds) : []);
+  }
+  const pcm = pcm0.slice();
+  return new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2);
+    const onMessage = (event) => {
+      const msg = event.data || {};
+      if (msg.id !== id) return;
+      worker.removeEventListener('message', onMessage);
+      if (msg.type === 'segments-result' && Array.isArray(msg.segments)) resolve(msg.segments);
+      else resolve(analyzeSegmentsSync(pcm0, audioBuffer.sampleRate, segmentSeconds));
+    };
+    worker.addEventListener('message', onMessage);
+    try {
+      worker.postMessage(
+        { type: 'segments', id, pcm, sampleRate: audioBuffer.sampleRate, segmentSeconds },
+        [pcm.buffer]
+      );
+    } catch {
+      worker.removeEventListener('message', onMessage);
+      resolve(analyzeSegmentsSync(pcm0, audioBuffer.sampleRate, segmentSeconds));
+    }
+  });
+}
+
+/**
  * Détection BPM + tonalité d'un AudioBuffer décodé, déléguée au Web Worker dédié
  * quand il est disponible (navigateur/Tauri), avec repli synchrone sinon (tests).
  * Le PCM est copié avant transfert : l'AudioBuffer reste utilisable par l'appelant.

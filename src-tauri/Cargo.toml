@@ -5,6 +5,16 @@ edition = "2021"
 
 [dependencies]
 tauri = { version = "2.0", features = [ "devtools" ] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-dialog = "2.8.4"
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "wav", "pcm"] }
+# Inférence ONNX (research.md §1) : binaires téléchargés au build (`download-binaries` par défaut).
+ort = { version = "=2.0.0-rc.15" }
+
+# DirectML uniquement sous Windows ; le repli CPU ne demande aucune feature.
+[target.'cfg(windows)'.dependencies]
+ort = { version = "=2.0.0-rc.15", features = ["directml"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

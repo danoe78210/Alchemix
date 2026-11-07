@@ -3,13 +3,14 @@
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import logoUrl from '../../../../Assets/Alchemix_Logo.png';
 
-  let { appTitle = 'AlcheMix Studio' } = $props();
+  let { appTitle = 'AlcheMix Studio', currentModule = 1, onSelectModule = null } = $props();
 
+  // Seuls les modules 1 et 2 sont accessibles ; 3 et 4 restent verrouillés.
   const modules = [
-    { label: 'MODULE 1: CADRAN CAMELOT', active: true },
-    { label: 'MODULE 2: DÉMIXAGE IA', active: false },
-    { label: 'MODULE 3: WARPING & MASHUP', active: false },
-    { label: 'MODULE 4: MASTERING', active: false }
+    { id: 1, label: 'MODULE 1: CADRAN CAMELOT', available: true },
+    { id: 2, label: 'MODULE 2: DÉMIXAGE IA', available: true },
+    { id: 3, label: 'MODULE 3: WARPING & MASHUP', available: false },
+    { id: 4, label: 'MODULE 4: MASTERING', available: false }
   ];
 
   async function handleQuitAndClean() {
@@ -56,14 +57,22 @@
     <!-- Navigation des modules -->
     <nav class="hidden lg:flex items-center h-full gap-space-xs">
       {#each modules as mod}
-        {#if mod.active}
+        {#if mod.id === currentModule}
           <a
             aria-current="page"
             class="h-full flex items-center px-space-md font-title-md text-title-md tracking-wider transition-all bg-surface-container text-accent-amber-master border-b-2 border-accent-amber-master"
-            href="#module-1"
+            href="#module-{mod.id}"
           >
             {mod.label}
           </a>
+        {:else if mod.available}
+          <button
+            type="button"
+            class="h-full flex items-center px-space-md font-label-lg text-label-lg tracking-wider text-outline hover:text-accent-amber-master cursor-pointer"
+            onclick={() => onSelectModule?.(mod.id)}
+          >
+            {mod.label}
+          </button>
         {:else}
           <a
             class="h-full flex items-center px-space-md font-label-lg text-label-lg tracking-wider text-outline cursor-not-allowed opacity-50"

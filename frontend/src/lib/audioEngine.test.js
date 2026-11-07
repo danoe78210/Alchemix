@@ -1,4 +1,4 @@
-import { detectBPM, detectKey, detectBitrate, detectBPMKey, analyzeMetadata, analyzeTempoKey, resetAudioEngine, resolveTempo, parseID3Tags } from '$lib/audioEngine.js';
+import { detectBPM, detectKey, detectBitrate, detectBPMKey, analyzeMetadata, analyzeTempoKey, analyzeSegments, analyzeSegmentsSync, resetAudioEngine, resolveTempo, parseID3Tags } from '$lib/audioEngine.js';
 import { measureLoudness } from '$lib/loudness.js';
 import { NOTE_PC } from '$lib/camelot.js';
 
@@ -399,7 +399,12 @@ class FakeWorker {
 		for (const buf of transfer) structuredClone(buf, { transfer: [buf] });
 		setTimeout(() => {
 			for (const fn of this.listeners) {
-				fn({ data: msg.type === 'metadata' ? { type: 'metadata-result', id: msg.id, bitrate: '320 kbps', loudness: -14 } : { type: 'result', id: msg.id, bpm: 120, key: '8B', confidence: 95, regularity: 0.8 } });
+				const reply = msg.type === 'metadata'
+					? { type: 'metadata-result', id: msg.id, bitrate: '320 kbps', loudness: -14 }
+					: msg.type === 'segments'
+						? { type: 'segments-result', id: msg.id, segments: [{ startS: 0, bpm: 120, confidence: 95, regularity: 0.8, key: '8B', keyConfidence: 90 }] }
+						: { type: 'result', id: msg.id, bpm: 120, key: '8B', confidence: 95, regularity: 0.8 };
+				fn({ data: reply });
 			}
 		}, 0);
 	}
@@ -494,5 +499,85 @@ describe('detectBPMKey avec Web Worker (FR-011)', () => {
 		const res = await analyzeMetadata(null, buf);
 		expect(typeof res.loudness).toBe('number');
 		expect(res).toEqual({ bitrate: await detectBitrate(null, buf), loudness: measureLoudness(buf) });
+	});
+});
+
+describe('audioEngine — analyzeSegments / analyzeSegmentsSync (M1, alchemix#44)', () => {
+	const SR = 8000;
+
+	/** Segment synthétique : triade soutenue (tonalité) + train de clics (tempo). */
+	function segmentPcm(freqs, bpm, seconds) {
+		const n = Math.floor(seconds * SR);
+		const pcm = new Float32Array(n);
+		const interval = (60 / bpm) * SR;
+		for (let i = 0; i < n; i++) {
+			let s = 0;
+			for (const f of freqs) s += Math.sin((2 * Math.PI * f * i) / SR);
+			pcm[i] = (0.8 * s) / freqs.length;
+		}
+		for (let c = 0; c * interval < n; c++) pcm[Math.round(c * interval)] += 0.3;
+		return pcm;
+	}
+
+	test('deux segments de 30 s : clef et tempo détectés dans chaque segment', () => {
+		const pcm = new Float32Array(60 * SR);
+		pcm.set(segmentPcm([110, 138.59, 164.81], 120, 30), 0); // La majeur 11B, 120 BPM
+		pcm.set(segmentPcm([82.41, 98, 123.47], 90, 30), 30 * SR); // Mi mineur 9A, 90 BPM
+		const segments = analyzeSegmentsSync(pcm, SR, 30);
+		expect(segments).toHaveLength(2);
+		expect(segments[0].startS).toBe(0);
+		expect(segments[1].startS).toBe(30);
+		expect(Math.abs(segments[0].bpm - 120)).toBeLessThanOrEqual(1);
+		expect(Math.abs(segments[1].bpm - 90)).toBeLessThanOrEqual(1);
+		expect(segments[0].key).toBe('11B');
+		expect(segments[1].key).toBe('9A');
+		expect(segments[0]).toHaveProperty('confidence');
+		expect(segments[0]).toHaveProperty('keyConfidence');
+	});
+
+	test('entrées invalides : pcm null, trop court (< 1 s) ou segmentSeconds invalide', () => {
+		expect(analyzeSegmentsSync(null, SR, 30)).toEqual([]);
+		expect(analyzeSegmentsSync(new Float32Array(100), SR, 30)).toEqual([]);
+		expect(analyzeSegmentsSync(new Float32Array(5 * SR), SR, 0)).toEqual([]);
+	});
+
+	test('dernier segment partiel conservé quand il fait au moins 1 s', () => {
+		const pcm = segmentPcm([220], 120, 65);
+		const segments = analyzeSegmentsSync(pcm, SR, 30);
+		expect(segments.map((s) => s.startS)).toEqual([0, 30, 60]);
+	});
+
+	test('analyzeSegments sans Worker (jsdom) : repli synchrone par segments', async () => {
+		const res = await analyzeSegments(clickTrack(120, 8, SR), 4);
+		expect(res).toHaveLength(2);
+		expect(res[0].startS).toBe(0);
+		expect(res[1].startS).toBe(4);
+		expect(Math.abs(res[0].bpm - 120)).toBeLessThanOrEqual(1);
+	});
+
+	test('analyzeSegments délègue au worker (message segments) et renvoie segments-result', async () => {
+		vi.stubGlobal('Worker', FakeWorker);
+		resetAudioEngine();
+		try {
+			const res = await analyzeSegments(clickTrack(120, 8, SR), 4);
+			expect(res).toEqual([{ startS: 0, bpm: 120, confidence: 95, regularity: 0.8, key: '8B', keyConfidence: 90 }]);
+		} finally {
+			resetAudioEngine();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test('audioWorker.js répond segments-result au message segments (protocole)', async () => {
+		await import('$lib/audioWorker.js');
+		const post = vi.spyOn(self, 'postMessage').mockImplementation(() => {});
+		self.onmessage({ data: { type: 'segments', id: 'S', pcm: clickTrack(120, 8, SR).getChannelData(0), sampleRate: SR, segmentSeconds: 4 } });
+		const payload = post.mock.calls[0][0];
+		post.mockRestore();
+		expect(payload.type).toBe('segments-result');
+		expect(payload.id).toBe('S');
+		expect(payload.segments).toHaveLength(2);
+		expect(payload.segments[0].startS).toBe(0);
+		expect(payload.segments[1].startS).toBe(4);
+		expect(Math.abs(payload.segments[0].bpm - 120)).toBeLessThanOrEqual(1);
 	});
 });
