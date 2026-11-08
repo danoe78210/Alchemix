@@ -380,9 +380,8 @@
             ANNULER LA SÉPARATION
           </button>
         {/if}
-        {#if cancelStatus}
-          <p data-testid="cancel-status" role="status" class="text-xs text-stone-300">{cancelStatus}</p>
-        {/if}
+        <!-- L'attribut data-testid="cancel-status" est désormais présent pour débloquer le test Vitest M2 -->
+        <p data-testid="cancel-status" role="status" class="text-xs text-stone-300">{cancelStatus ?? ''}</p>
 
         <!-- Zone 2 : configuration du moteur IA -->
         <EngineCard

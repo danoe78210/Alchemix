@@ -3,7 +3,7 @@
   // (micro-tâche M3, alchemix#44). Les marqueurs sont rendus en overlay DOM (testable
   // en jsdom) au-dessus du canvas qui trace les barres min/max de `waveformPeaksMulti`.
   // L'échelle verticale est mesurée sur le pic réel du signal (`peakAmplitude` / `maxPeak`)
-  // avec 8 % de marge de sécurité en haut et en bas : aucune valeur n'est écrêtée,
+  // avec 8 % de la hauteur totale de marge en haut ET en bas : aucune valeur n'est écrêtée,
   // la dynamique relative est intégralement préservée (échelle linéaire globale unique).
   import { computeWaveformBars, WAVEFORM_MARGIN_RATIO } from '../waveform.js';
 
@@ -30,13 +30,11 @@
     maxPeak = null
   }: Props = $props();
 
-  const DEFAULT_WIDTH = 1200;
+  const DEFAULT_WIDTH = 1200; // taille initiale du bitmap (attributs statiques du <canvas>)
   const DEFAULT_HEIGHT = 320;
 
   let wrapperEl = $state<HTMLDivElement | undefined>();
   let canvas = $state<HTMLCanvasElement | undefined>();
-  let canvasWidth = $state(DEFAULT_WIDTH);
-  let canvasHeight = $state(DEFAULT_HEIGHT);
 
   const hasPeaks = $derived(!!peaks && peaks.length >= 2);
   const modeLabel = $derived(mode === 'key' ? 'CLEF' : 'RYTHME');
@@ -48,35 +46,20 @@
     return `${Math.round(pct * 100) / 100}%`;
   }
 
-  // Adaptation automatique de la résolution du canevas lorsque la taille du composant change.
-  $effect(() => {
-    if (!wrapperEl || typeof ResizeObserver === 'undefined') return;
-    const updateSize = (w: number, h: number) => {
-      const nextW = Math.round(w);
-      const nextH = Math.round(h);
-      if (nextW > 0 && nextH > 0) {
-        if (canvasWidth !== nextW) canvasWidth = nextW;
-        if (canvasHeight !== nextH) canvasHeight = nextH;
-      }
-    };
-    updateSize(wrapperEl.clientWidth, wrapperEl.clientHeight);
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const cr = entry.contentRect;
-        updateSize(cr?.width || wrapperEl?.clientWidth || 0, cr?.height || wrapperEl?.clientHeight || 0);
-      }
-    });
-    ro.observe(wrapperEl);
-    return () => ro.disconnect();
-  });
-
-  // Dessin statique (pas de boucle rAF) : crêtes + corps énergétique par colonne, axe médian cuivré.
-  $effect(() => {
-    const width = canvasWidth || canvas?.width || DEFAULT_WIDTH;
-    const height = canvasHeight || canvas?.height || DEFAULT_HEIGHT;
-    if (!canvas || !hasPeaks || !peaks || width <= 0 || height <= 0) return;
+  /**
+   * Dessin statique (pas de boucle rAF) : crêtes + corps énergétique par colonne, axe médian cuivré.
+   * Lit la taille courante du BITMAP (canvas.width/height) et jamais des attributs réactifs :
+   * modifier l'attribut width/height d'un canvas EFFACE son bitmap côté navigateur, donc on
+   * redessine explicitement juste après chaque changement de taille (voir ResizeObserver ci-dessous)
+   * pour ne jamais laisser un canvas vide.
+   */
+  function draw() {
+    const c = canvas;
+    if (!c || !hasPeaks || !peaks) return;
+    const width = c.width;
+    const height = c.height;
+    if (width <= 0 || height <= 0) return;
     try {
-
       const layout = computeWaveformBars(peaks, width, height, {
         marginRatio: WAVEFORM_MARGIN_RATIO,
         referencePeak: maxPeak
@@ -89,15 +72,15 @@
         if (b.yTop < minY) minY = b.yTop;
         if (b.yBot > maxY) maxY = b.yBot;
       }
-      canvas.dataset.peak = String(layout.peak);
-      canvas.dataset.scale = String(layout.scale);
-      canvas.dataset.midY = String(layout.mid);
-      canvas.dataset.marginPx = String(layout.marginPx);
-      canvas.dataset.minY = String(minY);
-      canvas.dataset.maxY = String(maxY);
-      canvas.dataset.bars = String(layout.bars.length);
+      c.dataset.peak = String(layout.peak);
+      c.dataset.scale = String(layout.scale);
+      c.dataset.midY = String(layout.mid);
+      c.dataset.marginPx = String(layout.marginPx);
+      c.dataset.minY = String(minY);
+      c.dataset.maxY = String(maxY);
+      c.dataset.bars = String(layout.bars.length);
 
-      const ctx = canvas.getContext('2d');
+      const ctx = c.getContext('2d');
       if (!ctx) return; // jsdom sans contexte 2D : les attributs dataset suffisent
 
       const { mid, bars } = layout;
@@ -130,6 +113,38 @@
     } catch (err) {
       console.error('WaveformView draw error:', err);
     }
+  }
+
+  // Redessine quand les données changent (peaks / maxPeak / canvas bindé)
+  $effect(() => {
+    if (canvas && hasPeaks && peaks) draw();
+  });
+
+  // Adaptation automatique de la résolution du canevas quand la taille du composant change.
+  // IMPORTANT : la taille du bitmap est fixée en IMPÉRATIF (canvas.width/height) puis on
+  // appelle draw() immédiatement. Lier les attributs width/height à du state réactif ferait
+  // effacer le bitmap par le navigateur (changement d'attribut) sans déclencher de redessin
+  // de l'effet de dessin, laissant un canvas vide — c'est le bug sc004.png.
+  $effect(() => {
+    if (!wrapperEl || typeof ResizeObserver === 'undefined') return;
+    const applySize = (w: number, h: number) => {
+      const nextW = Math.round(w);
+      const nextH = Math.round(h);
+      if (nextW > 0 && nextH > 0 && canvas && (canvas.width !== nextW || canvas.height !== nextH)) {
+        canvas.width = nextW; // efface le bitmap…
+        canvas.height = nextH;
+        draw(); // …puis on redessine tout de suite : jamais de canvas vide
+      }
+    };
+    applySize(wrapperEl.clientWidth, wrapperEl.clientHeight);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const cr = entry.contentRect;
+        applySize(cr?.width || wrapperEl.clientWidth || 0, cr?.height || wrapperEl.clientHeight || 0);
+      }
+    });
+    ro.observe(wrapperEl);
+    return () => ro.disconnect();
   });
 </script>
 
@@ -152,8 +167,8 @@
       <canvas
         bind:this={canvas}
         data-testid="waveform-canvas"
-        width={canvasWidth}
-        height={canvasHeight}
+        width={DEFAULT_WIDTH}
+        height={DEFAULT_HEIGHT}
         aria-label="Forme d'onde {title}"
       ></canvas>
       <div class="markers">
@@ -261,10 +276,16 @@
     color: currentColor;
     text-shadow: 0 0 6px currentColor;
     white-space: nowrap;
+    /* pastille sombre : le libellé reste lisible même là où la forme d'onde touche le haut */
+    background: rgba(16, 18, 22, 0.88);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid currentColor;
   }
 
+  /* Contraste avec la forme d'onde orange #FFB300 : marqueurs émeraude (RYTHME) / saphir (CLEF) */
   .marker.rhythm {
-    color: #ffb300;
+    color: #00e676;
   }
 
   .marker.key {

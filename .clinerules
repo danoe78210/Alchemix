@@ -1,0 +1,49 @@
+# === RÈGLES STRICTES DE COMPORTEMENT (CLINE) ===
+Tu es l'agent de développement d'AlcheMix Studio. En tant que modèle IA, tu dois IMPÉRATIVEMENT respecter ces règles de sécurité pour éviter de corrompre l'environnement ou de bloquer la session.
+
+## 1. ENVIRONNEMENT ET COMMANDES (WINDOWS POWERSHELL)
+- **Système** : Windows 11.
+- **Terminal** : PowerShell (et NON Bash/Zsh).
+- **INTERDICTION ABSOLUE** d'utiliser des commandes Unix : `ls`, `grep`, `find`, `head`, `tail`, `cat`, `rm`, `2>/dev/null`.
+- **Commandes autorisées** : Utilise `Get-ChildItem` (pour lister), `Select-String` (pour chercher du texte), ou des scripts Python natifs (ex: `os.listdir()`).
+- Échappe toujours correctement tes guillemets en PowerShell.
+- **Exécution Python** : Sous Windows, l'exécutable est **toujours `python`**. N'utilise **JAMAIS `python3`**, car cette commande est introuvable par défaut sur ce système et provoquera une erreur d'exécution.
+
+## 2. LECTURE DE FICHIERS ET LOGS (ANTI-HEAD)
+- N'utilise **JAMAIS** de commandes pipées avec `head` (ex: `git diff | head -200`) pour lire une partie d'un fichier ou d'une sortie. La commande `head` n'existe pas sous PowerShell.
+- Pour lire le contenu d'un fichier, utilise TOUJOURS ton outil natif `<read_file>`.
+- Si tu dois limiter la sortie d'une commande PowerShell, utilise `Select-Object -First X` (ex: `git diff | Select-Object -First 200`).
+
+## 3. UTILISATION DES OUTILS ET BALISES (ANTI-HALLUCINATION)
+- Tu dois utiliser UNIQUEMENT les outils fournis dans ton prompt système d'origine (ex: `<execute_command>`, `<write_to_file>`, `<read_file>`).
+- **NE JAMAIS INVENTER DE BALISES XML** (Interdiction d'utiliser `<data_function_call>`, `<invoke_name>`, `<tool_call>`, etc.). Si tu inventes une balise, le système plantera.
+- Pour exécuter une commande terminal, utilise TOUJOURS ta balise native `<execute_command>`.
+
+## 4. MANIPULATION DE FICHIERS (ANTI-CRASH SYNTAXIQUE)
+- **Règle d'or** : N'essaie JAMAIS de créer ou d'éditer un fichier volumineux en passant son contenu dans une commande terminal sur une seule ligne (ex: `python -c "print('...huge code...')"` ou `echo "..." > file`). Cela provoque des erreurs de jetons PowerShell.
+- Utilise TOUJOURS ton outil natif `<write_to_file>` ou `<replace_in_file>` pour insérer du code.
+- Ne tronque pas le code. Ne mets jamais de commentaires du type `// ... reste du code ici ...`. Écris le fichier en entier.
+
+## 5. ARCHITECTURE DU PROJET (TAURI + SVELTE + RUST)
+- Ne te perds pas dans les dossiers, voici la structure stricte d'AlcheMix Studio :
+  * **Frontend (Svelte 5 / JS)** : `frontend/src/`
+  * **Tests (Vitest)** : `frontend/test/` ou `frontend/src/**/*.test.js`
+  * **Backend (Rust / Tauri)** : `src-tauri/src/`
+  * N'essaie pas de chercher le dossier `module2` à la racine de `src/`, il n'y est pas.
+
+## 6. GESTION DES TÂCHES KANZO ET WORKFLOW
+- Ton gestionnaire de tâches est Kanzo, accessible sur `http://localhost:4242/`.
+- Avant de commencer, consulte l'API ou l'interface de Kanzo pour connaître le ticket actif.
+- Avance par **micro-tâches atomiques**.
+- Après chaque modification de code frontend, exécute `npm test` dans le dossier `frontend/` (avec `<execute_command>`).
+- NE PASSE JAMAIS à la tâche suivante si un test échoue.
+
+## 7. SÉCURITÉ ANTI-BOUCLE (RÈGLE DES 2 ESSAIS)
+- Si une commande terminal, une compilation ou un test échoue **deux fois de suite** avec la même erreur : **ARRÊTE-TOI IMMÉDIATEMENT**.
+- Ne tente pas une 3ème fois en aveugle. Affiche le message suivant à l'utilisateur : *"⚠️ Je suis bloqué sur cette erreur après 2 tentatives. Voici ce qui coince : [Résumé]. Comment souhaites-tu procéder ?"*
+- Si une commande met plus de 5 minutes, arrête-toi et demande de l'aide.
+
+## 8. Règle d'accès à Kanzo et interdiction de simulation
+- **Source de vérité unique :** Ne simule JAMAIS les tickets, les statuts ou les retours de backlog. La base de données SQLite de Kanzo est située à l'emplacement absolu : `C:\Users\danao\kanzo\kanzo.db`.
+- **Méthode d'interrogation :** Pour récupérer les détails d'un ticket (comme `alchemix#31`) ou consulter le backlog, interroge directement la base de données SQLite (`kanzo.db`) ou utilise les scripts Python utilitaires disponibles dans `C:\tmp` (ex: `kanzo_summary.py`, `list_kanzo.py`).
+- **Validation technique :** Aucune modification de code ou clôture de tâche ne doit être effectuée sans avoir au préalable extrait et lu le contenu réel du ticket depuis cette source.

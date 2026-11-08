@@ -11,7 +11,7 @@ use module2::decode;
 use module2::encode::Stem;
 use module2::disk;
 use module2::error::{ErrorCode, Module2Error};
-use module2::job::Jobs;
+use module2::job::{JobMode, Jobs};
 use module2::settings::{self, Settings, WorkspaceCheck};
 
 /// Vide le dossier cache de l'application (buffers audio temporaires,
@@ -69,8 +69,18 @@ fn check_workspace(app: AppHandle, required_bytes: u64) -> Result<WorkspaceCheck
 #[serde(rename_all = "camelCase")]
 struct StartedJob {
     job_id: String,
+    mode: String,
     simulated: bool,
     bytes_per_stem: u64,
+}
+
+/// Réponse de la progression d'un job (contrat §3.5).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JobProgress {
+    job_id: String,
+    progress: f32,
+    mode: String,
 }
 
 /// Métadonnées du morceau importé (durée, fréquence, canaux), sans lancer la séparation.
@@ -96,8 +106,9 @@ fn set_selected_model(app: AppHandle, model: Option<String>) -> Result<Settings,
 }
 
 /// Décode le fichier puis lance une séparation. Simulée tant que les modèles ONNX ne sont pas branchés (FR-007).
+/// `mode` : "PERFORMANCE" ou "STUDIO" (contrat §3.3).
 #[tauri::command]
-fn start_separation(jobs: State<Mutex<Jobs>>, path: String) -> Result<StartedJob, Module2Error> {
+fn start_separation(jobs: State<Mutex<Jobs>>, path: String, mode: Option<String>) -> Result<StartedJob, Module2Error> {
     let path = PathBuf::from(&path);
     let decoded = decode::decode_file(&path)?;
     let track = path
@@ -105,8 +116,32 @@ fn start_separation(jobs: State<Mutex<Jobs>>, path: String) -> Result<StartedJob
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "piste".to_string());
     let bytes_per_stem = (decoded.samples.len() * 4) as u64;
-    let (job_id, simulated) = jobs.lock().expect("verrou des jobs").start(&track, &decoded);
-    Ok(StartedJob { job_id, simulated, bytes_per_stem })
+    let mode = mode
+        .map(|s| s.parse::<JobMode>().map_err(|_| Module2Error::new(ErrorCode::InvalidArgument, format!("mode invalide : {s}"))))
+        .unwrap_or(Ok(JobMode::default()))?;
+    let (job_id, mode_ret, simulated) = jobs.lock().expect("verrou des jobs").start(&track, &decoded, mode);
+    Ok(StartedJob { job_id, mode: mode_ret.to_string(), simulated, bytes_per_stem })
+}
+
+/// Définit le mode d'un job existant (Performance / Studio).
+#[tauri::command]
+fn set_job_mode(jobs: State<Mutex<Jobs>>, job_id: String, mode: String) -> Result<JobMode, Module2Error> {
+    let new_mode = mode.parse::<JobMode>().map_err(|_| Module2Error::new(ErrorCode::InvalidArgument, format!("mode invalide : {mode}")))?;
+    // Le mode est immuable après création du job, on le retourne simplement pour que le front-end puisse l'afficher.
+    let current = jobs.lock().expect("verrou des jobs").mode(&job_id)?;
+    if current != new_mode {
+        return Err(Module2Error::new(ErrorCode::InvalidArgument, "le mode d'un job est immuable après sa création".to_string()));
+    }
+    Ok(current)
+}
+
+/// Retourne la progression d'un job (0.0 à 100.0) et son mode (contrat §3.5).
+#[tauri::command]
+fn get_job_progress(jobs: State<Mutex<Jobs>>, job_id: String) -> Result<JobProgress, Module2Error> {
+    let jobs_guard = jobs.lock().expect("verrou des jobs");
+    let progress = jobs_guard.progress(&job_id)?;
+    let mode = jobs_guard.mode(&job_id)?;
+    Ok(JobProgress { job_id, progress, mode: mode.to_string() })
 }
 
 /// Résultat d'un export : chemins des fichiers écrits dans le dossier de travail.
@@ -187,7 +222,9 @@ fn main() {
             start_separation,
             cancel_separation,
             get_stem_audio,
-            export_stems
+            export_stems,
+            set_job_mode,
+            get_job_progress
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

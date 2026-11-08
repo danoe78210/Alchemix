@@ -11,18 +11,22 @@
 //! - S2 : STFT / iSTFT (fenêtre de Hann, pas = N/4) + test de reconstruction — fait ;
 //! - S3 : métrique de fuite en dB entre stems adjacents — à faire ;
 //! - S4 : soustraction spectrale anti-fuite + test FR-004 sur signal de référence + bornes — à faire.
+//!
+//! Ce module contient des primitives spectrales destinées à l'inférence ONNX réelle
+//! (actions futures). Elles sont volontairement inutilisées pour l'instant.
+
+#![allow(dead_code)]
 
 use std::f64::consts::PI;
 
-/// Taille de la FFT de la soustraction spectrale (puissance de 2).
+#[allow(dead_code)]
 pub const FFT_SIZE: usize = 2048;
-/// Pas de la STFT : recouvrement de 75 % (N/4), standard pour le recollage par fenêtre de Hann.
+#[allow(dead_code)]
 pub const HOP_SIZE: usize = FFT_SIZE / 4;
-/// Cible de fuite de FR-004 / SC-003, en dB.
+#[allow(dead_code)]
 pub const BLEED_TARGET_DB: f64 = -30.0;
 
-/// FFT radix-2 itérative (Cooley-Tukey), en place, précision f64.
-/// Rejette une taille nulle, non puissance de deux, ou des tableaux de longueurs différentes.
+#[allow(dead_code)]
 fn fft_inplace(re: &mut [f64], im: &mut [f64]) -> Result<(), &'static str> {
     let n = re.len();
     if n == 0 || n != im.len() || !n.is_power_of_two() {
@@ -73,12 +77,14 @@ fn fft_inplace(re: &mut [f64], im: &mut [f64]) -> Result<(), &'static str> {
 
 /// Un bin spectral (parties réelle et imaginaire), précision f64.
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 struct Bin {
     re: f64,
     im: f64,
 }
 
 impl Bin {
+    #[allow(dead_code)]
     fn mag2(self) -> f64 {
         self.re * self.re + self.im * self.im
     }
@@ -86,6 +92,7 @@ impl Bin {
 
 /// Fenêtre de Hann de longueur `n`, avec un plancher de 1e-4 pour que le recollage
 /// ne divise jamais par zéro aux extrémités (même garde que `chunk::linear_window`).
+#[allow(dead_code)]
 fn hann(n: usize) -> Vec<f64> {
     if n < 2 {
         return vec![1.0; n];
@@ -99,6 +106,7 @@ fn hann(n: usize) -> Vec<f64> {
 }
 
 /// FFT inverse en place : conjuguée de la FFT de la conjuguée, divisée par n.
+#[allow(dead_code)]
 fn ifft_inplace(re: &mut [f64], im: &mut [f64]) -> Result<(), &'static str> {
     for v in im.iter_mut() {
         *v = -*v;
@@ -117,6 +125,7 @@ fn ifft_inplace(re: &mut [f64], im: &mut [f64]) -> Result<(), &'static str> {
 /// STFT d'un signal mono : trames de `n` échantillons fenêtrées (Hann), pas de `hop`,
 /// dernière trame complétée par des zéros. Retourne une trame par position de départ.
 /// `n` doit être une puissance de 2 >= 2 et `hop` >= 1.
+#[allow(dead_code)]
 fn stft(x: &[f32], n: usize, hop: usize) -> Vec<Vec<Bin>> {
     assert!(n >= 2 && n.is_power_of_two(), "stft : n doit être une puissance de 2 >= 2");
     assert!(hop >= 1, "stft : hop doit être >= 1");
@@ -138,6 +147,7 @@ fn stft(x: &[f32], n: usize, hop: usize) -> Vec<Vec<Bin>> {
 
 /// iSTFT : fenêtre de synthèse Hann identique, recouvrement-addition, puis division par la
 /// somme des carrés de fenêtre (COLA) pour rendre l'amplitude. Retourne `total` échantillons.
+#[allow(dead_code)]
 fn istft(frames: &[Vec<Bin>], n: usize, hop: usize, total: usize) -> Vec<f32> {
     let window = hann(n);
     let mut acc = vec![0.0f64; total];
@@ -166,11 +176,14 @@ fn istft(frames: &[Vec<Bin>], n: usize, hop: usize, total: usize) -> Vec<f32> {
 
 /// Seuil de dominance en amplitude (2.0 ≈ 6 dB) : au-delà, un bin est attribué au stem le
 /// plus fort et soustrait de l'autre (comparaison sur les énergies, carrés des modules).
+#[allow(dead_code)]
 pub const DOMINANCE_RATIO: f64 = 2.0;
 /// Plancher du ratio de fuite (1e-12, soit -120 dB) pour éviter -inf.
+#[allow(dead_code)]
 pub const BLEED_FLOOR: f64 = 1e-12;
 
 /// Énergie spectrale totale (somme des carrés des modules sur toutes les trames et bins).
+#[allow(dead_code)]
 fn spectral_energy(frames: &[Vec<Bin>]) -> f64 {
     frames.iter().flat_map(|f| f.iter()).map(|b| b.mag2()).sum()
 }
@@ -179,6 +192,7 @@ fn spectral_energy(frames: &[Vec<Bin>]) -> f64 {
 /// `10·log10( Σ min(|A|,|B|)² / min(Σ|A|², Σ|B|²) )`, plancher à `BLEED_FLOOR` (-120 dB).
 /// Numérateur : énergie spectrale partagée (le bleed). Dénominateur : énergie du stem
 /// le plus faible de la paire, celui qui subit le plus la fuite.
+#[allow(dead_code)]
 fn pair_bleed_db(a: &[f32], b: &[f32]) -> f64 {
     let fa = stft(a, FFT_SIZE, HOP_SIZE);
     let fb = stft(b, FFT_SIZE, HOP_SIZE);
@@ -197,6 +211,7 @@ fn pair_bleed_db(a: &[f32], b: &[f32]) -> f64 {
 
 /// Fuite entre stems adjacents (paires (0,1), (1,2), ...), en dB : la pire des paires.
 /// Sans paire (0 ou 1 stem) ou stems silencieux : -120 dB.
+#[allow(dead_code)]
 pub fn measure_bleed_db(stems: &[Vec<f32>]) -> f64 {
     let mut worst = -120.0f64;
     for pair in stems.windows(2) {
@@ -210,6 +225,7 @@ pub fn measure_bleed_db(stems: &[Vec<f32>]) -> f64 {
 /// Rapport de la soustraction spectrale : fuite avant/après (pire paire adjacente, en dB)
 /// et nombre de paires traitées.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub struct BleedReport {
     pub before_db: f64,
     pub after_db: f64,
@@ -221,6 +237,7 @@ pub struct BleedReport {
 /// (≈ 6 dB), le bin du stem faible est soustrait (remis à zéro) ; le stem dominant conserve
 /// son contenu et sa phase. En dessous du seuil, le bin est jugé commun et inchangé.
 /// Conséquence documentée : la somme des stems ne vaut plus le mix après traitement.
+#[allow(dead_code)]
 pub fn reduce_bleed(stems: &mut [Vec<f32>]) -> BleedReport {
     let before_db = measure_bleed_db(stems);
     let pairs = stems.len().saturating_sub(1);
@@ -233,6 +250,7 @@ pub fn reduce_bleed(stems: &mut [Vec<f32>]) -> BleedReport {
 }
 
 /// Soustraction spectrale d'une paire de stems adjacents, en place ; longueurs préservées.
+#[allow(dead_code)]
 fn subtract_pair(a: &mut Vec<f32>, b: &mut Vec<f32>) {
     let len_a = a.len();
     let len_b = b.len();

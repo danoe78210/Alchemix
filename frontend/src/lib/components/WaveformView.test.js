@@ -82,12 +82,12 @@ describe('WaveformView — panneau forme d\'onde Module 1 (M3, alchemix#44)', ()
 		expect(canvas).not.toBeNull();
 		const height = 320;
 		const mid = 160;
-		const marginPx = mid * 0.08; // 12.8 px
-		const usableHalf = mid - marginPx; // 147.2 px
+		const marginPx = height * 0.08; // 25.6 px = 8 % de la hauteur TOTALE par côté
+		const usableHalf = mid - marginPx; // 134.4 px
 
 		expect(Number(canvas.dataset.peak)).toBeCloseTo(1.0);
 		expect(Number(canvas.dataset.midY)).toBe(160);
-		expect(Number(canvas.dataset.marginPx)).toBeCloseTo(12.8);
+		expect(Number(canvas.dataset.marginPx)).toBeCloseTo(25.6);
 		expect(Number(canvas.dataset.scale)).toBeCloseTo(usableHalf / 1.0);
 
 		// 1er fillRect = fond sombre #101216 sur (0, 0, 1200, 320)
@@ -98,21 +98,21 @@ describe('WaveformView — panneau forme d\'onde Module 1 (M3, alchemix#44)', ()
 		expect(outerBars).toHaveLength(3);
 		for (const bar of outerBars) {
 			expect(bar.fillStyle).toBe('#FFB300');
-			// Aucune crête ne touche les bords (0 ou 320) : respect strict de la marge [12.8, 307.2]
+			// Aucune crête ne touche les bords (0 ou 320) : respect strict de la marge [25.6, 294.4]
 			expect(bar.y).toBeGreaterThanOrEqual(marginPx - 1e-5);
 			expect(bar.y + bar.h).toBeLessThanOrEqual(height - marginPx + 1e-5);
 		}
 
 		// Vérification exacte colonne par colonne : yTop = mid - max * scale, yBot = mid - min * scale
-		// Col 0 : min=0, max=0.5 -> yTop = 160 - 0.5 * 147.2 = 86.4, yBot = 160
+		// Col 0 : min=0, max=0.5 -> yTop = 160 - 0.5 * 134.4 = 92.8, yBot = 160
 		expect(outerBars[0].y).toBeCloseTo(160 - 0.5 * usableHalf);
 		expect(outerBars[0].y + outerBars[0].h).toBeCloseTo(160);
 
-		// Col 1 : min=-0.2, max=0.8 -> yTop = 160 - 0.8 * 147.2 = 42.24, yBot = 160 + 0.2 * 147.2 = 189.44
+		// Col 1 : min=-0.2, max=0.8 -> yTop = 160 - 0.8 * 134.4 = 52.48, yBot = 160 + 0.2 * 134.4 = 186.88
 		expect(outerBars[1].y).toBeCloseTo(160 - 0.8 * usableHalf);
 		expect(outerBars[1].y + outerBars[1].h).toBeCloseTo(160 + 0.2 * usableHalf);
 
-		// Col 2 : min=-1.0, max=0.4 -> yTop = 160 - 0.4 * 147.2 = 101.12, yBot = 160 + 1.0 * 147.2 = 307.2
+		// Col 2 : min=-1.0, max=0.4 -> yTop = 160 - 0.4 * 134.4 = 106.24, yBot = 160 + 1.0 * 134.4 = 294.4
 		expect(outerBars[2].y).toBeCloseTo(160 - 0.4 * usableHalf);
 		expect(outerBars[2].y + outerBars[2].h).toBeCloseTo(height - marginPx);
 
@@ -144,9 +144,9 @@ describe('WaveformView — panneau forme d\'onde Module 1 (M3, alchemix#44)', ()
 				props: { peaks: zoomedPeaks, maxPeak: 1.0, durationS: 60 }
 			});
 			const canvas = container.querySelector('[data-testid="waveform-canvas"]');
-			// L'échelle utilise maxPeak = 1.0 (147.2) et non 0.25 (pas de normalisation indépendante du segment)
+			// L'échelle utilise maxPeak = 1.0 (134.4 px de demi-hauteur utile) et non 0.25 (pas de normalisation indépendante du segment)
 			expect(Number(canvas.dataset.peak)).toBeCloseTo(1.0);
-			expect(Number(canvas.dataset.scale)).toBeCloseTo(160 * 0.92);
+			expect(Number(canvas.dataset.scale)).toBeCloseTo(160 - 320 * 0.08);
 
 			// Simule un redimensionnement du conteneur en 800 × 200
 			if (resizeCb) {
@@ -156,7 +156,7 @@ describe('WaveformView — panneau forme d\'onde Module 1 (M3, alchemix#44)', ()
 			expect(canvas.getAttribute('width')).toBe('800');
 			expect(canvas.getAttribute('height')).toBe('200');
 			expect(Number(canvas.dataset.midY)).toBe(100);
-			expect(Number(canvas.dataset.scale)).toBeCloseTo(100 * 0.92);
+			expect(Number(canvas.dataset.scale)).toBeCloseTo(100 - 200 * 0.08);
 		} finally {
 			globalThis.ResizeObserver = OrigRO;
 		}

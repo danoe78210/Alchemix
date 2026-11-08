@@ -53,11 +53,15 @@ Ce fichier est destiné à un environnement **Claude Code dont le modèle actif 
 
 Traite cette stack comme le contexte déclaré, pas comme une preuve que chaque composant est déjà installé ou utilisé dans chaque module. Vérifie le dépôt avant toute décision technique.
 
-## 4. Directives Fast-Track
+## 4. Directives Fast-Track & Workflows anti-blocage
 
-Ces directives prioritaires permettent une exécution rapide et fiable des tâches courantes sans boucle d'erreur.
+Ces directives prioritaires garantissent une exécution rapide, fluide et autonome sans boucle d'erreur ni abandon prématuré.
 
 - **Directive d'Édition (`Write` vs `Edit`)** : Utilise prioritairement la réécriture complète (`Write`) pour les fichiers de règles et de configuration. Si un outil d'édition partielle (`Edit`) échoue une fois, bascule immédiatement sur `Write` sans boucler.
+- **Protocole Anti-Boucle & Anti-Abandon (Workflows de robustesse)** :
+  - **Interdiction formelle de reporter une tâche** (ex: "M2 reste en attente par manque de temps") sous prétexte de limites imaginaires. Si un test échoue ou si un élément semble manquer, inspecte le code réel : ne présume jamais l'absence d'un sélecteur (`data-testid`) ou d'un composant sans l'avoir vérifié par une lecture de fichier.
+  - **Gestion stricte de PowerShell sous Windows** : N'utilise jamais de blocs `python -c` complexes sur une seule ligne ou de constructions type heredoc (`<< 'EOF'`) qui cassent sous PowerShell. Crée un script `.py` temporaire ou exécute des commandes robustes.
+  - **Isolation des tests frontend** : Pour exécuter Vitest sans bloquer en mode interactif, utilise impérativement la commande non interactive : `npm run test -- --run`.
 
 ## 5. Obligatoire avant toute tâche
 
@@ -143,7 +147,7 @@ Dans le callback audio, notamment `processBlock` :
 - N'utilise pas `std::vector::resize`, `new` ou `malloc` dans le callback. Préalloue et prépare les ressources hors du thread audio.
 - Utilise des mécanismes de communication sûrs entre threads, par exemple atomiques ou files lock-free adaptées. Vérifie leurs garanties avant usage.
 - Protège les durées de vie et la synchronisation des objets audio et plugins.
-- Lorsqu'un plugin VST3/CLAP est ajouté ou modifié, traite la compensation de latence des plugins (PDC) et les changements de latence comme des comportements à vérifier et à signaler.
+- Lorsqu'un plugin VST3/CLAP is ajouté ou modifié, traite la compensation de latence des plugins (PDC) et les changements de latence comme des comportements à vérifier et à signaler.
 - Ajoute des tests ou une procédure de vérification adaptés aux contraintes de temps réel lorsqu'ils sont réalisables.
 
 Ne considère pas une file comme « lock-free » simplement parce qu'elle utilise des atomiques : vérifie les propriétés requises et les producteurs/consommateurs prévus.
@@ -232,7 +236,7 @@ ctest --test-dir build --output-on-failure
 ### Tauri / Svelte
 ```bash
 npm run tauri dev
-npm run test
+npm run test -- --run
 npm run tauri build
 ```
 

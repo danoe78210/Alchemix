@@ -1,5 +1,10 @@
 //! Découpage en segments pour le démixage (FR-003) : segments de 8,0 s, recouvrement de 87,5 %,
 //! fenêtre linéaire pour le recollage sans clic.
+//!
+//! Ce module est destiné à l'inférence ONNX réelle (actions futures).
+//! Les fonctions sont volontairement inutilisées pour l'instant.
+
+#![allow(dead_code)]
 
 /// Durée d'un segment d'inférence, en secondes (FR-003).
 pub const SEGMENT_SECONDS: f64 = 8.0;

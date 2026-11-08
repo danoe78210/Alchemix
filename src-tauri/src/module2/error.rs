@@ -1,5 +1,9 @@
 //! Erreurs du Module 2, selon `contracts/module2-contracts.md` §2 et §6.
 //! Le `code` sert à la logique de l'interface ; le `message` est lisible en français.
+//!
+//! Les variantes non utilisées (ModelMissing, etc.) sont destinées aux actions futures.
+
+#![allow(dead_code)]
 
 use serde::Serialize;
 

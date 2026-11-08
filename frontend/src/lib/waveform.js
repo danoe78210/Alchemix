@@ -6,7 +6,7 @@
  * d'onde fidèle centrée sur l'axe médian, avec marqueurs de changements (M5).
  */
 
-/** Marge verticale symétrique par défaut (8 % en haut et 8 % en bas, plage requise 5–10 %). */
+/** Marge verticale symétrique par défaut : 8 % de la HAUTEUR TOTALE en haut et 8 % en bas (plage requise 5–10 % par côté). */
 export const WAVEFORM_MARGIN_RATIO = 0.08;
 
 /**
@@ -195,9 +195,12 @@ export function peakAmplitude(peaks) {
  * Garanties :
  * - Centrage exact sur l'axe horizontal médian `mid = height / 2`.
  * - Échelle verticale globale linéaire `scale = usableHalfHeight / refPeak` où
- *   `usableHalfHeight = mid * (1 - marginRatio)` (marge par défaut : 8 % en haut et en bas).
+ *   `marginPx = height * marginRatio` (marge exprimée en % de la hauteur TOTALE
+ *   du canevas, appliquée en haut ET en bas — défaut 8 % par côté, plage 5–10 %) et
+ *   `usableHalfHeight = mid - marginPx`.
  * - Aucun écrêtage (clamping) : les coordonnées `yTop = mid - max * scale` et
- *   `yBot = mid - min * scale` sont strictement proportionnelles aux amplitudes.
+ *   `yBot = mid - min * scale` sont strictement proportionnelles aux amplitudes ;
+ *   les crêtes globales restent strictement dans `[marginPx, height - marginPx]`.
  * - Adaptation automatique à la largeur disponible : si `cols > width`, regroupe les
  *   colonnes par pixel horizontal pour éviter tout recouvrement en bloc.
  */
@@ -226,7 +229,7 @@ export function computeWaveformBars(peaks, width, height, options = {}) {
 
   const cols = Math.floor(peaks.length / 2);
   const mid = h / 2;
-  const marginPx = mid * marginRatio;
+  const marginPx = h * marginRatio; // marge par côté en % de la hauteur totale (ex. 8 % de 320 px = 25,6 px)
   const usableHalfHeight = mid - marginPx;
   const measuredPeak = peakAmplitude(peaks);
   const refPeak =

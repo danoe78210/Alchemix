@@ -290,16 +290,16 @@ describe('waveform.js — fidélité dynamique, formats variés et coordonnées 
 
 		expect(layout.mid).toBe(160);
 		expect(layout.marginRatio).toBeCloseTo(WAVEFORM_MARGIN_RATIO);
-		expect(layout.marginPx).toBeCloseTo(160 * 0.08); // 12.8 px
-		expect(layout.usableHalfHeight).toBeCloseTo(160 * 0.92); // 147.2 px
+		expect(layout.marginPx).toBeCloseTo(320 * 0.08); // 25.6 px = 8 % de la hauteur TOTALE par côté
+		expect(layout.usableHalfHeight).toBeCloseTo(160 - 320 * 0.08); // 134.4 px
 		expect(layout.peak).toBeCloseTo(0.8);
-		expect(layout.scale).toBeCloseTo((160 * 0.92) / 0.8); // 184 px par unité
+		expect(layout.scale).toBeCloseTo((160 - 320 * 0.08) / 0.8); // 168 px par unité
 		expect(layout.bars).toHaveLength(3);
 
 		// Colonne 0 : min = -0.8 (atteint la limite basse utile), max = +0.4 (moitié de la demi-hauteur utile)
 		const b0 = layout.bars[0];
-		expect(b0.yBot).toBeCloseTo(160 - (-0.8) * layout.scale); // 307.2 = height - marginPx
-		expect(b0.yTop).toBeCloseTo(160 - 0.4 * layout.scale); // 86.4
+		expect(b0.yBot).toBeCloseTo(160 - (-0.8) * layout.scale); // 294.4 = height - marginPx
+		expect(b0.yTop).toBeCloseTo(160 - 0.4 * layout.scale); // 92.8
 		expect(b0.yTop).toBeGreaterThanOrEqual(layout.marginPx);
 		expect(b0.yBot).toBeLessThanOrEqual(height - layout.marginPx);
 
@@ -404,7 +404,7 @@ describe('waveform.js — fidélité dynamique, formats variés et coordonnées 
 			// Aucune partie du signal n'est coupée verticalement ; les crêtes restent dans [marginPx, height - marginPx]
 			expect(minTop).toBeGreaterThanOrEqual(layout.marginPx - 1e-4);
 			expect(maxBot).toBeLessThanOrEqual(320 - layout.marginPx + 1e-4);
-			// La crête globale atteint exactement la limite utile (marge de sécurité de 8 % = 12.8 px)
+			// La crête globale atteint exactement la limite utile (marge de sécurité de 8 % de la hauteur = 25.6 px)
 			expect(Math.min(minTop, 320 - maxBot)).toBeCloseTo(layout.marginPx, 2);
 			// Pour les enregistrements réels avec silences et attaques (tts/*.wav), forte dynamique visible
 			if (file.startsWith('tts/')) {

@@ -2,6 +2,10 @@
 //! et repli CPU. DirectML est préféré sous Windows quand il est disponible (research.md §1).
 //! La gestion du slot de session unique (un seul modèle chargé, VRAM 6 Go) viendra avec
 //! le chargement des modèles (carte alchemix#22).
+//!
+//! La fabrique de session (`session_builder`) est destinée au chargement des modèles (carte #22).
+
+#![allow(dead_code)]
 
 use crate::module2::error::{ErrorCode, Module2Error};
 #[cfg(windows)]
