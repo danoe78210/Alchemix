@@ -53,7 +53,7 @@ describe('WaveformView — panneau forme d\'onde Module 1 (M3, alchemix#44)', ()
 		expect(container.querySelector('[data-testid="waveform-empty"]')).not.toBeNull();
 	});
 
-	test('compare les amplitudes extraites avec les coordonnées Y réellement dessinées sur le canvas (marge 8 %, centrage, aucun écrêtage)', () => {
+test('compare les amplitudes extraites avec les coordonnées Y réellement dessinées sur le canvas (marge 8 %, centrage, aucun écrêtage)', async () => {
 		const fillRectCalls = [];
 		const strokeCalls = [];
 		const fakeCtx = {
@@ -77,6 +77,7 @@ describe('WaveformView — panneau forme d\'onde Module 1 (M3, alchemix#44)', ()
 		const { container } = render(WaveformView, {
 			props: { peaks: testPeaks, durationS: 60, markers: [], mode: 'rhythm', title: 'PISTE A' }
 		});
+		await new Promise((r) => setTimeout(r, 0));
 
 		const canvas = container.querySelector('[data-testid="waveform-canvas"]');
 		expect(canvas).not.toBeNull();

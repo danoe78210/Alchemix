@@ -118,7 +118,7 @@ html, body, #app {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background-color: #101216;
+  background-color: #121316;
   color: #E0E6ED;
   font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
 }
@@ -135,3 +135,10 @@ html, body, #app {
 .animate-ruby-blink {
   animation: rubyBlink 1.2s infinite ease-in-out;
 }
+
+  /* Beatgrid panel — conteneur de la forme d'onde (v8.11 restoration) */
+  .beatgrid-panel {
+    flex: 1;
+    min-height: 200px;
+    overflow: hidden;
+  }

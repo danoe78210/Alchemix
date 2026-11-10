@@ -14,13 +14,18 @@ describe('Module1View — bouton DÉMIXER placé après la carte Tempo', () => {
 });
 
 describe('Module1View — Gatekeeper sous la roue Camelot (tâche alchemix#16)', () => {
-	test('le panneau Gatekeeper est dans la colonne centrale, après le cadran Camelot', () => {
-		render(Module1View);
+	test('le panneau Gatekeeper est dans la colonne centrale (onglet Gatekeeper actif)', () => {
+		render(Module1View, { props: { activeTab: 'gatekeeper' } });
 		const gatekeeper = screen.getByTestId('compatibility-section');
 		const center = document.querySelector('.col-center');
-		const wheel = document.querySelector('.camelot-panel');
 		expect(center.contains(gatekeeper)).toBe(true);
-		expect(wheel.compareDocumentPosition(gatekeeper) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	test('le cadran Camelot est dans la colonne centrale (onglet Gatekeeper)', () => {
+		render(Module1View, { props: { activeTab: 'gatekeeper' } });
+		const wheel = document.querySelector('.wheel-wrapper');
+		const center = document.querySelector('.col-center');
+		expect(center.contains(wheel)).toBe(true);
 	});
 
 	test('le Gatekeeper n\'est plus dans la colonne droite (Deck B)', () => {
@@ -53,21 +58,11 @@ describe('Module1View — cadre de conseils sous le Gatekeeper', () => {
 	});
 });
 
-describe('Module1View — pas de forme d\'onde ni de beatgrid', () => {
-	test('les trois colonnes restent des frères directs (la colonne droite n\'est pas imbriquée dans le centre)', () => {
-		render(Module1View);
-		const center = document.querySelector('.col-center');
-		const right = document.querySelector('.col-right');
-		expect(center.contains(right)).toBe(false);
-		expect(right.parentElement).toBe(center.parentElement);
-	});
-
-	test('le panneau FORMES D\'ONDES & BEATGRID et son footer (PHASE OFFSET, GRID SNAP, TIME-STRETCH) sont retirés', () => {
-		const { container } = render(Module1View);
-		expect(container.querySelector('.beatgrid-panel')).toBeNull();
-		expect(container.querySelector('canvas')).toBeNull();
-		expect(screen.queryByText(/PHASE OFFSET/)).toBeNull();
-		expect(screen.queryByText(/GRID SNAP/)).toBeNull();
-		expect(screen.queryByText(/FORMES D'ONDES/)).toBeNull();
+describe('Module1View — forme d\'onde et beatgrid restaurés', () => {
+	test('le panneau FORMES D\'ONDES & BEATGRID est présent dans la colonne centrale (onglet Forme d\'Onde actif)', () => {
+		const { container } = render(Module1View, { props: { activeTab: 'waveform' } });
+		const panel = container.querySelector('.beatgrid-panel');
+		expect(panel).not.toBeNull();
+		expect(panel.closest('.col-center')).not.toBeNull();
 	});
 });

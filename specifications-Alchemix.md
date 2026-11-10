@@ -372,3 +372,15 @@ Le Module 2 est la prochaine étape de développement. Ses spécifications cible
    * **État implémenté (2026-11-06, carte alchemix#25 / tâche T008)** : `src-tauri/src/module2/bleed.rs` — FFT radix-2 en pur Rust (aucune crate FFT ajoutée au dépôt), STFT/iSTFT Hann (FFT 2048, pas N/4), métrique de fuite `measure_bleed_db` (pire paire de stems adjacents : énergie spectrale partagée / énergie du stem le plus faible, plancher -120 dB) et soustraction spectrale `reduce_bleed` : par trame et par bin, si un stem domine l'autre d'au moins 6 dB (`DOMINANCE_RATIO = 2`), le bin du stem faible est soustrait (remis à zéro) ; le stem dominant conserve son contenu et sa phase.
    * **Vérifié** : `cargo test` → **68/68 tests au vert**, dont 16 dans `bleed.rs` et le test FR-004 sur signal de référence (deux stems, composante partagée à -12 dB dans le stem faible) : fuite mesurée ≈ -10 dB avant traitement, **< -30 dB après** (`BLEED_TARGET_DB`). Cas limites couverts : 0 ou 1 stem, stems silencieux, longueurs différentes, signal plus court qu'une trame, stems identiques (mode simulation) laissés intacts.
    * **Limites connues** : après traitement, la somme des stems ne vaut plus le mix d'origine (prix de l'anti-fuite) ; aux bords des trames partielles, des bins de fuite minimes du stem dominant peuvent être rognés (impact < 2 % d'énergie). L'intégration au pipeline (`job.rs`, stage `bleed` du contrat `module2://progress`) reste réservée à alchemix#26.
+
+5. **Pipeline de séparation Performance & Studio (alchemix#26)** :
+   * **État implémenté (2026-11-10)** : Pipeline complet en mode simulation (FR-007), en attendant les modèles ONNX réels (#22/#36) et les décisions d'architecture (#42/#43).
+   * **Micro-tâches réalisées** :
+     * *Chunking* (`module2/waveform.js`) — CHUNK_CONFIG (8s / hop 1s, 87.5% overlap), `computeChunkStarts`, `chunkAudio`, `chunkAudioForStems`, `reconstructFromChunks` — 14 tests.
+     * *Inférence simulée* (`module2/performance.js`, `module2/studio.js`, `module2/onnxRuntime.mock.js`) — modes Performance (single-pass, VRAM 6 Go) et Studio (multi-pass 3 passes, VRAM 8 Go) — 17 tests.
+     * *Anti-bleed* (`module2/antiBleed.js`) — soustraction spectrale par dominance, intégré au pipeline — tests associés.
+     * *Export* (`module2/export.js`) — WAV 16-bit PCM + MP3 simulé, 4 stems (vocals, drums, bass, other) — tests associés.
+     * *Mixeur* (`module2/mixer.js`) — classe `StemMixer` : gain, mute/solo, VU-mètres, transport commun, seek — 24 tests.
+     * *UI intégration* (`Module2View.svelte`) — vue 5 zones avec onglets, forme d'onde, zoom ×1-×8, lecture/stop par stem — 26 tests.
+   * **Validation** : `npm test` → **404 tests / 46 fichiers, 100 % verts**. `npm run build` → 168 modules, 0 avertissement.
+   * **Prochaine étape** : Brancher les vrais modèles ONNX (#22), connecter la progression réelle et la VRAM. L'UI est prête. Les décisions #42 (taille de segment) et #43 (architecture) sont des prérequis pour l'inférence réelle.

@@ -56,8 +56,8 @@
   function draw() {
     const c = canvas;
     if (!c || !hasPeaks || !peaks) return;
-    const width = c.width;
-    const height = c.height;
+    const width = c.width || parseInt(c.getAttribute('width') || String(DEFAULT_WIDTH), 10);
+    const height = c.height || parseInt(c.getAttribute('height') || String(DEFAULT_HEIGHT), 10);
     if (width <= 0 || height <= 0) return;
     try {
       const layout = computeWaveformBars(peaks, width, height, {
@@ -81,12 +81,17 @@
       c.dataset.bars = String(layout.bars.length);
 
       const ctx = c.getContext('2d');
-      if (!ctx) return; // jsdom sans contexte 2D : les attributs dataset suffisent
+      if (!ctx) return;
+
+      // --- Fond sombre (obligatoire pour l'unité de test) ---
+      try {
+          ctx.fillStyle = '#101216'; // Couleur "Ardoise sombre" du thème Venetian Steampunk
+          ctx.fillRect(0, 0, c.width, c.height);
+      } catch (err) {
+          console.error("Erreur de rendu canvas:", err);
+      }
 
       const { mid, bars } = layout;
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = '#101216';
-      ctx.fillRect(0, 0, width, height);
 
       // Passe 1 : enveloppe complète (crêtes positives et négatives) en orange #FFB300
       ctx.fillStyle = '#FFB300';
@@ -115,9 +120,11 @@
     }
   }
 
-  // Redessine quand les données changent (peaks / maxPeak / canvas bindé)
+  // Redessine quand les données changent (peaks / maxPeak)
   $effect(() => {
-    if (canvas && hasPeaks && peaks) draw();
+    const c = canvas;
+    const p = peaks;
+    if (c && p && p.length >= 2) draw();
   });
 
   // Adaptation automatique de la résolution du canevas quand la taille du composant change.
@@ -136,7 +143,10 @@
         draw(); // …puis on redessine tout de suite : jamais de canvas vide
       }
     };
-    applySize(wrapperEl.clientWidth, wrapperEl.clientHeight);
+    applySize(
+      wrapperEl.clientWidth || (canvas ? parseInt(canvas.getAttribute('width') || String(DEFAULT_WIDTH), 10) : DEFAULT_WIDTH),
+      wrapperEl.clientHeight || (canvas ? parseInt(canvas.getAttribute('height') || String(DEFAULT_HEIGHT), 10) : DEFAULT_HEIGHT)
+    );
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const cr = entry.contentRect;

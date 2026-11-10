@@ -95,7 +95,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 	});
 
 	test('à l’ouverture, le panneau affiche AUCUN SIGNAL (aucune piste chargée)', () => {
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		expect(screen.getByTestId('waveform-section')).toBeInTheDOM();
 		expect(screen.getByTestId('waveform-empty')).toHaveTextContent('AUCUN SIGNAL');
 		expect(screen.getByTestId('waveform-mode')).toHaveTextContent('RYTHME');
@@ -103,7 +103,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 	});
 
 	test('piste A chargée : canvas de la forme d’onde + badge RYTHME, chargement terminé', async () => {
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		await loadDeckA();
 		expect(screen.getByTestId('waveform-canvas')).toBeInTheDOM();
 		expect(screen.getByTestId('waveform-mode')).toHaveTextContent('RYTHME');
@@ -111,7 +111,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 	});
 
 	test('le levier PISTE bascule l’affichage sur la piste B (non chargée -> AUCUN SIGNAL)', async () => {
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		await loadDeckA();
 		fireEvent.click(screen.getByTestId('track-toggle'));
 		expect(screen.getByTestId('track-state')).toHaveTextContent('B');
@@ -125,7 +125,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 	});
 
 	test('le levier MARQUEURS bascule le badge entre RYTHME et CLEF', async () => {
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		await loadDeckA();
 		expect(screen.getByTestId('mode-state')).toHaveTextContent('RYTHME');
 		fireEvent.click(screen.getByTestId('mode-toggle'));
@@ -136,7 +136,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 	});
 
 	test('marqueurs rendus d’après les segments : 120 → 90 BPM en RYTHME, 8B → 10B en CLEF', async () => {
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		await loadDeckA();
 		await vi.waitFor(() => {
 			expect(screen.getAllByTestId('waveform-marker').length).toBe(1);
@@ -149,7 +149,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 	});
 
 	test('éjecter la piste A réinitialise le panneau forme d’onde (AUCUN SIGNAL)', async () => {
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		await loadDeckA();
 		fireEvent.click(screen.getAllByTestId('deck-load-eject')[0]);
 		await vi.waitFor(() => {
@@ -160,7 +160,7 @@ describe('Module1View — panneau forme d onde A/B (M6, alchemix#44)', () => {
 
 	test('buffer stéréo : tous les canaux alimentent l’enveloppe (canvas rendu sans erreur)', async () => {
 		FakeAudioContext.numChannels = 2;
-		render(Module1View);
+		render(Module1View, { props: { activeTab: 'waveform' } });
 		await loadDeckA();
 		expect(screen.getByTestId('waveform-canvas')).toBeInTheDOM();
 		expect(screen.queryByTestId('waveform-loading')).not.toBeInTheDOM();

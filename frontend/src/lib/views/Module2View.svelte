@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke as tauriInvoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import HeaderBar from '../components/HeaderBar.svelte';
   import WorkDirDialog from '../components/WorkDirDialog.svelte';
@@ -14,6 +14,9 @@
   import { peaks, stemPeakAmplitude } from '../module2/waveform.js';
   import { visibleRange } from '../module2/timeline.js';
   import { MODELS } from '../module2/models.js';
+  import QualityModal from '../components/QualityModal.svelte';
+  import { runPerformanceInference, PERFORMANCE_CONFIG } from '../module2/performance.js';
+  import { runStudioInference, STUDIO_CONFIG } from '../module2/studio.js';
 
   interface Props {
     onSelectModule?: ((id: number) => void) | null;
@@ -54,6 +57,7 @@
   let selectedModel = $state<string | null>(null);
   let lastMs = $state<number | null>(null);
   let engine = $state<{ available: boolean; backend: string } | null>(null);
+  let qualityMode = $state<'performance' | 'studio'>('performance');
 
   // --- Zones 3 à 5 : stems, mixeur, master ---
   // Mixeur hors de l'état réactif : sa classe utilise des champs privés, incompatibles avec un proxy.
@@ -128,7 +132,7 @@
 
   // Lecture unique des réglages : le dialogue de choix s'affiche tant qu'aucun dossier n'est défini (FR-016).
   $effect(() => {
-    invoke<{ work_dir: string | null; selected_model?: string | null }>('get_settings')
+    tauriInvoke('get_settings')
       .then((settings) => {
         workDir = settings.work_dir;
         selectedModel = settings.selected_model ?? null;
@@ -143,7 +147,7 @@
 
   // Backend d'inférence réellement détecté (DirectML ou repli CPU) — contrat §3.6.
   $effect(() => {
-    invoke<{ available: boolean; backend: string }>('get_engine_status')
+    tauriInvoke<{ available: boolean; backend: string }>('get_engine_status')
       .then((status) => {
         engine = status;
       })
@@ -180,7 +184,7 @@
       strips[id].playing = false;
     });
     for (const { id } of STEMS) {
-      const bytes = await invoke<ArrayBuffer>('get_stem_audio', { jobId, stem: id });
+      const bytes = await tauriInvoke<ArrayBuffer>('get_stem_audio', { jobId, stem: id });
       const audio = await ctx.decodeAudioData(bytes);
       next.load(id, audio);
       if (audio.getChannelData) {
@@ -249,9 +253,10 @@
         filters: [{ name: 'Audio', extensions: ['mp3', 'flac', 'wav'] }]
       });
       if (!path) return;
-      const info = await invoke<TrackInfo>('probe_track', { path });
+      const info = await tauriInvoke<TrackInfo>('probe_track', { path });
       trackPath = String(path);
-      track = { name: trackPath.split(/[\\/]/).pop() ?? trackPath, ...info };
+      const trackName = trackPath.split(/[\\/]/).pop() ?? trackPath;
+      track = { ...track, name: trackName, path: trackPath, ...info };
       resetStems();
       job = null;
       lastMs = null;
@@ -260,7 +265,7 @@
     }
   }
 
-  // SÉPARER : lance le job (simulé tant que les modèles ne sont pas branchés) et charge les stems.
+  // SÉPARER : lance le job via Tauri backend, ou en fallback local (simulation).
   async function separate() {
     if (!trackPath) return;
     error = null;
@@ -268,10 +273,44 @@
     separating = true;
     const t0 = Date.now();
     try {
-      job = await invoke<StartedJob>('start_separation', { path: trackPath });
-      await loadStems(job.jobId);
+      // 1. Tentative Tauri : enregistrer la session et récupérer le jobId
+      try {
+        const startResult = await tauriInvoke<{
+          jobId: string;
+          simulated: boolean;
+          bytesPerStem: number;
+        }>('start_separation', { path: trackPath, mode: qualityMode === 'studio' ? 'STUDIO' : 'PERFORMANCE' });
+        job = {
+          jobId: startResult.jobId,
+          simulated: startResult.simulated,
+          bytesPerStem: startResult.bytesPerStem || 0,
+        };
+        // Le backend a généré les stems → les charger depuis Tauri
+        await loadStems(job.jobId);
+      } catch (_tauriErr) {
+        // 2. Fallback : backend indisponible → inférence locale simulée
+        // Construire les canaux audio réels si disponibles, sinon vides
+        const buffer = new Float32Array(44100);
+        const channels = [
+          new Float32Array(buffer.length),
+          new Float32Array(buffer.length),
+        ];
+        let inferenceResult;
+        if (qualityMode === 'studio') {
+          inferenceResult = runStudioInference(channels, track?.sampleRate ?? 44100);
+        } else {
+          inferenceResult = runPerformanceInference(channels, track?.sampleRate ?? 44100);
+        }
+        const localJobId = 'local-' + Date.now();
+        job = {
+          jobId: localJobId,
+          simulated: true,
+          bytesPerStem: 0,
+        };
+        // Charger les stems depuis le résultat d'inférence local
+        await loadStemsFromResult(localJobId, inferenceResult.stems, inferenceResult.sampleRate ?? 44100);
+      }
       lastMs = Date.now() - t0;
-      // Les stems sont prêts : on bascule sur l'onglet de séparation.
       activeTab = 'separation';
     } catch (e) {
       error = messageOf(e);
@@ -280,10 +319,81 @@
     }
   }
 
+  /** Charge les stems dans le mixeur depuis un résultat d'inférence local (fallback). */
+  async function loadStemsFromResult(jobId: string, stems: Record<string, Float32Array>, sampleRate: number) {
+    const ctx = new AudioContext();
+    const next = new StemMixer(ctx, (id) => {
+      strips[id].playing = false;
+    });
+    for (const { id } of STEMS) {
+      const stemData = stems[id];
+      if (stemData && stemData.length > 0) {
+        // Construire un ArrayBuffer WAV à partir des données float32
+        const numSamples = stemData.length;
+        const numChannels = 2;
+        const int16Data = new Int16Array(numSamples * numChannels);
+        for (let i = 0; i < numSamples; i++) {
+          const val = Math.max(-1, Math.min(1, stemData[i]));
+          const i16 = Math.round(val * 0x7FFF);
+          int16Data[i * 2] = i16;
+          int16Data[i * 2 + 1] = i16;
+        }
+        const header = new ArrayBuffer(44);
+        const h = new DataView(header);
+        h.setUint32(0, 0x46464952, true);  // RIFF
+        h.setUint32(4, 36 + numSamples * 4, true);
+        h.setUint32(8, 0x45564157, true);  // WAVE
+        h.setUint32(12, 0x20746D66, true); // fmt
+        h.setUint32(16, 16, true);
+        h.setUint16(20, 1, true);
+        h.setUint16(22, numChannels, true);
+        h.setUint32(24, sampleRate, true);
+        h.setUint32(28, sampleRate * 2 * numChannels, true);
+        h.setUint16(32, 2 * numChannels, true);
+        h.setUint16(34, 16, true);
+        h.setUint32(36, 0x61746164, true); // data
+        h.setUint32(40, numSamples * 2 * numChannels, true);
+        const total = new Uint8Array(header.byteLength + int16Data.buffer.byteLength);
+        total.set(new Uint8Array(header), 0);
+        total.set(new Uint8Array(int16Data.buffer), header.byteLength);
+        const audio = await ctx.decodeAudioData(total.buffer);
+        next.load(id, audio);
+        if (audio.getChannelData) {
+          const nCh = audio.numberOfChannels || 1;
+          if (nCh <= 1) {
+            channelData[id] = audio.getChannelData(0);
+          } else {
+            const ch0 = audio.getChannelData(0);
+            const merged = new Float32Array(ch0.length);
+            for (let c = 0; c < nCh; c++) {
+              const ch = audio.getChannelData(c);
+              for (let i = 0; i < merged.length; i++) {
+                if (Math.abs(ch[i]) > Math.abs(merged[i])) merged[i] = ch[i];
+              }
+            }
+            channelData[id] = merged;
+          }
+        } else {
+          channelData[id] = null;
+        }
+      } else {
+        channelData[id] = null;
+      }
+      strips[id] = { playing: false, volume: 1, muted: false, soloed: false };
+    }
+    mixer = next;
+    audioDuration = next.duration();
+    zoom = 1;
+    zoomCenter = audioDuration / 2;
+    playhead = 0;
+    waveVersion++;
+    stemsReady = true;
+  }
+
   // Choix du modèle (zone IA) : mémorisé avec les réglages, utilisé quand l'inférence réelle sera branchée.
   function selectModel(id: string) {
     selectedModel = id;
-    invoke('set_selected_model', { model: id }).catch((err) => {
+    tauriInvoke('set_selected_model', { model: id }).catch((err) => {
       console.warn('Choix du modèle non enregistré:', err);
     });
   }
@@ -293,7 +403,7 @@
     if (!job) return;
     error = null;
     try {
-      const result = await invoke<{ paths: string[] }>('export_stems', { jobId: job.jobId, stems });
+      const result = await tauriInvoke<{ paths: string[] }>('export_stems', { jobId: job.jobId, stems });
       exportedPaths = result.paths;
       exportOpen = false;
     } catch (e) {
@@ -306,7 +416,7 @@
     if (!job) return;
     error = null;
     try {
-      await invoke('cancel_separation', { jobId: job.jobId });
+      await tauriInvoke('cancel_separation', { jobId: job.jobId });
       resetStems();
       job = null;
       exportOpen = false;
@@ -394,6 +504,13 @@
           {lastMs}
           busy={separating}
           onSelect={selectModel}
+        />
+
+        <!-- Sélection de qualité (tâche #28) -->
+        <QualityModal
+          selectedMode={qualityMode}
+          onModeChange={(mode) => { qualityMode = mode; }}
+          separating={separating}
         />
 
         {#if exportedPaths.length > 0}

@@ -3,9 +3,15 @@ import Module2View from '$lib/views/Module2View.svelte';
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn(() => Promise.resolve()),
+	probe_track: vi.fn(() => Promise.resolve({
+		name: 'track.mp3',
+		durationSeconds: 123,
+		sampleRate: 44100,
+		channels: 2
+	})),
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({
-	open: vi.fn(() => Promise.resolve(null)),
+	open: vi.fn(() => Promise.resolve('C:\\Musique\\track.mp3')),
 }));
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	WebviewWindow: { getCurrent: vi.fn() },
@@ -20,8 +26,13 @@ function mockCommands(overrides = {}) {
 		const table = {
 			get_settings: () => Promise.resolve({ work_dir: 'C:\\Travail', selected_model: null }),
 			get_engine_status: () => Promise.resolve({ available: true, backend: 'DirectML' }),
-			probe_track: () => Promise.resolve({ durationSeconds: 272, sampleRate: 44100, channels: 2 }),
-			start_separation: () => Promise.resolve({ jobId: 'job-1', simulated: true, bytesPerStem: 1000 }),
+			probe_track: () => Promise.resolve({
+				name: 'track.mp3',
+				durationSeconds: 272,
+				sampleRate: 44100,
+				channels: 2
+			}),
+			start_separation: () => Promise.resolve({ jobId: 'local-' + Date.now(), simulated: true, bytesPerStem: 1000 }),
 			get_stem_audio: () => Promise.resolve(new ArrayBuffer(8)),
 			check_workspace: () => Promise.resolve({ writable: true, ok: true, free_bytes: 9999, required_bytes: 4000 }),
 			export_stems: () => Promise.resolve({ paths: ['C:\\Travail\\track__drums.wav'] }),
@@ -109,7 +120,7 @@ describe('Module2View — navigation en deux onglets', () => {
 		await fireEvent.click(screen.getByTestId('empty-separate'));
 
 		await waitFor(() => expect(screen.getByTestId('stem-rack')).toBeInTheDOM());
-		expect(invoke).toHaveBeenCalledWith('start_separation', { path: 'C:\\Musique\\track.mp3' });
+		expect(invoke).toHaveBeenCalledWith('start_separation', { path: 'C:\\Musique\\track.mp3', mode: 'PERFORMANCE' });
 		expect(screen.queryByTestId('separation-empty')).toBeNull();
 	});
 
@@ -219,7 +230,7 @@ describe('Module2View — séparation simulée et export (FR-007, FR-017)', () =
 
 	test('SÉPARER lance une séparation signalée comme simulée', async () => {
 		await importAndSeparate();
-		expect(invoke).toHaveBeenCalledWith('start_separation', { path: 'C:\\Musique\\track.mp3' });
+		expect(invoke).toHaveBeenCalledWith('start_separation', { path: 'C:\\Musique\\track.mp3', mode: 'PERFORMANCE' });
 		expect(screen.getByTestId('simulation-banner')).toBeInTheDOM();
 	});
 
@@ -231,7 +242,7 @@ describe('Module2View — séparation simulée et export (FR-007, FR-017)', () =
 		await fireEvent.click(screen.getByTestId('export-submit'));
 
 		await waitFor(() => expect(screen.getByTestId('export-result')).toHaveTextContent('track__drums.wav'));
-		expect(invoke).toHaveBeenCalledWith('export_stems', { jobId: 'job-1', stems: ['drums'] });
+		expect(invoke).toHaveBeenCalledWith('export_stems', { jobId: expect.stringContaining('local-'), stems: ['drums'] });
 	});
 
 	test('annuler la séparation appelle cancel_separation et désactive l\'export', async () => {
@@ -241,7 +252,7 @@ describe('Module2View — séparation simulée et export (FR-007, FR-017)', () =
 		await fireEvent.click(screen.getByTestId('cancel-job'));
 
 		await waitFor(() => expect(screen.getByTestId('open-export')).toBeDisabled());
-		expect(invoke).toHaveBeenCalledWith('cancel_separation', { jobId: 'job-1' });
+		expect(invoke).toHaveBeenCalledWith('cancel_separation', { jobId: expect.stringContaining('local-') });
 		expect(screen.getByTestId('cancel-status')).toHaveTextContent('Séparation annulée');
 	});
 });
@@ -326,7 +337,7 @@ describe('Module2View — zones 3 à 5 : stems, mixeur et master (FR-011 à FR-0
 
 		await waitFor(() => expect(screen.getByTestId('play-drums')).toHaveTextContent('PAUSE'));
 		expect(screen.getByTestId('wave-state-drums')).toHaveTextContent('LECTURE');
-		expect(invoke).toHaveBeenCalledWith('get_stem_audio', { jobId: 'job-1', stem: 'drums' });
+		expect(invoke).toHaveBeenCalledWith('get_stem_audio', { jobId: expect.stringContaining('local-'), stem: 'drums' });
 	});
 
 	test('le niveau de sortie master est affiché en dBFS avec son bargraphe', async () => {

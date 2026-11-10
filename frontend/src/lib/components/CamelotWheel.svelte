@@ -68,10 +68,10 @@
   <div class="wheel-header">
     <span class="icon">🎡</span>
     <span class="title">CADRAN D'HARMONIE CAMELOT</span>
-    <div class="notation-switch" data-testid="notation-switch" role="group" aria-label="Notation de la roue Camelot">
-      <button type="button" class="notation-opt {notation === 'codes' ? 'active' : ''}" data-testid="notation-codes" onclick={() => (notation = 'codes')}>CODES</button>
-      <button type="button" class="notation-opt {notation === 'notes' ? 'active' : ''}" data-testid="notation-notes" onclick={() => (notation = 'notes')}>NOTES</button>
-      <button type="button" class="notation-opt {notation === 'double' ? 'active' : ''}" data-testid="notation-double" onclick={() => (notation = 'double')}>DOUBLE</button>
+    <div class="notation-switch inline-flex gap-0.5 p-0.5 bg-surface-container-lowest/90 border border-border-copper/40 rounded-lg shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]" data-testid="notation-switch" role="group" aria-label="Notation de la roue Camelot">
+      <button type="button" class="px-2 py-1 text-[10px] font-mono font-extrabold uppercase tracking-wider transition-all duration-100 cursor-pointer rounded-md {notation === 'codes' ? 'bg-gradient-to-b from-[#5A3826] to-[#8C4A27] text-amber-300 border border-amber-600/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] translate-y-[1px]' : 'bg-surface-container-low text-stone-400 border border-border-copper/20 hover:bg-surface-container hover:text-amber-200 translate-y-0 shadow-[0_1px_2px_rgba(0,0,0,0.5)]'}" data-testid="notation-codes" onclick={() => (notation = 'codes')}>CODES</button>
+      <button type="button" class="px-2 py-1 text-[10px] font-mono font-extrabold uppercase tracking-wider transition-all duration-100 cursor-pointer rounded-md {notation === 'notes' ? 'bg-gradient-to-b from-[#5A3826] to-[#8C4A27] text-amber-300 border border-amber-600/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] translate-y-[1px]' : 'bg-surface-container-low text-stone-400 border border-border-copper/20 hover:bg-surface-container hover:text-amber-200 translate-y-0 shadow-[0_1px_2px_rgba(0,0,0,0.5)]'}" data-testid="notation-notes" onclick={() => (notation = 'notes')}>NOTES</button>
+      <button type="button" class="px-2 py-1 text-[10px] font-mono font-extrabold uppercase tracking-wider transition-all duration-100 cursor-pointer rounded-md {notation === 'double' ? 'bg-gradient-to-b from-[#5A3826] to-[#8C4A27] text-amber-300 border border-amber-600/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] translate-y-[1px]' : 'bg-surface-container-low text-stone-400 border border-border-copper/20 hover:bg-surface-container hover:text-amber-200 translate-y-0 shadow-[0_1px_2px_rgba(0,0,0,0.5)]'}" data-testid="notation-double" onclick={() => (notation = 'double')}>DOUBLE</button>
     </div>
   </div>
   {/if}
@@ -88,6 +88,12 @@
           <stop offset="0%" stop-color="#FFB300" />
           <stop offset="100%" stop-color="#00E676" />
         </linearGradient>
+        <filter id="glow-amber" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#FFB300" flood-opacity="0.8"/>
+        </filter>
+        <filter id="glow-emerald" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#00E676" flood-opacity="0.8"/>
+        </filter>
       </defs>
 
       <circle cx={CX} cy={CY} r="194" fill="#121316" stroke="#3A2218" stroke-width="4" />
@@ -124,6 +130,7 @@
             fill={isKeyA ? '#FFB300' : isKeyB ? '#00E676' : isCompat ? '#1E3A4C' : '#22252D'}
             stroke={isKeyA ? '#FFE082' : isKeyB ? '#B9F6CA' : isCompat ? '#29B6F6' : '#3A2218'}
             stroke-width={isKeyA || isKeyB ? '4' : isCompat ? '3' : '2'}
+            filter={isKeyA ? 'url(#glow-amber)' : isKeyB ? 'url(#glow-emerald)' : 'none'}
           />
           {#if !isIdle}
           {#if notation === 'double'}
@@ -138,9 +145,8 @@
               {frenchNote(k.majorEn)}
             </text>
           {:else}
-            <text x={x} y={y + 6.5} text-anchor="middle" font-size="18" font-weight="800" fill={isKeyA || isKeyB ? '#000' : isCompat ? '#29B6F6' : '#E0E6ED'}>
-              {code}
-            </text>
+            <text x={x} y={y + 2} text-anchor="middle" font-size="10" font-weight="800" fill={isKeyA || isKeyB ? '#FFF' : isCompat ? '#29B6F6' : '#E0E6ED'}>{code}</text>
+            <text x={x} y={y + 14} text-anchor="middle" font-size="8" font-weight="600" fill={isKeyA || isKeyB ? '#FFF' : isCompat ? '#7FD4FF' : '#94A3B8'}>{frenchNote(k.majorEn)}</text>
           {/if}
           {/if}
           {#if isKeyA || isKeyB}
@@ -173,6 +179,7 @@
             fill={isKeyA ? '#FFB300' : isKeyB ? '#00E676' : isCompat ? '#1E3A4C' : '#1A1C22'}
             stroke={isKeyA ? '#FFE082' : isKeyB ? '#B9F6CA' : isCompat ? '#29B6F6' : '#2D3039'}
             stroke-width={isKeyA || isKeyB ? '4' : isCompat ? '3' : '2'}
+            filter={isKeyA ? 'url(#glow-amber)' : isKeyB ? 'url(#glow-emerald)' : 'none'}
           />
           {#if !isIdle}
           {#if notation === 'double'}
@@ -187,9 +194,8 @@
               {minorNote(k)}
             </text>
           {:else}
-            <text x={x} y={y + 5.5} text-anchor="middle" font-size="14" font-weight="800" fill={isKeyA || isKeyB ? '#000' : isCompat ? '#29B6F6' : '#94A3B8'}>
-              {code}
-            </text>
+            <text x={x} y={y + 1} text-anchor="middle" font-size="9" font-weight="700" fill={isKeyA || isKeyB ? '#FFF' : isCompat ? '#29B6F6' : '#A0AAB8'}>{code}</text>
+            <text x={x} y={y + 12} text-anchor="middle" font-size="7" font-weight="500" fill={isKeyA || isKeyB ? '#FFF' : isCompat ? '#7FD4FF' : '#8899A6'}>{minorNote(k)}</text>
           {/if}
           {/if}
           {#if isKeyA || isKeyB}
@@ -266,40 +272,6 @@
   }
 
   /* Sélecteur de notation (codes / notes / double) */
-  .notation-switch {
-    display: inline-flex;
-    background: #090A0D;
-    border: 1px solid #3A2218;
-    border-radius: 14px;
-    padding: 2px;
-    gap: 2px;
-  }
-
-  .notation-opt {
-    border: none;
-    background: transparent;
-    color: #8A93A8;
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.8px;
-    padding: 3px 8px;
-    border-radius: 11px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .notation-opt:hover {
-    color: #E0E6ED;
-  }
-
-  .notation-opt.active {
-    background: linear-gradient(180deg, #E0B88A 0%, #C87D55 60%, #B06A43 100%);
-    color: #121316;
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-    box-shadow: 0 0 8px rgba(200, 125, 85, 0.6);
-  }
-
   /* Le SVG occupe 100 % de la largeur/hauteur du conteneur (cadran 432×432, soit 90 % de l'ancienne taille 484) */
   .svg-container {
     width: 100%;

@@ -1,4 +1,4 @@
-import { peaks, stemPeakAmplitude } from '$lib/module2/waveform.js';
+import { peaks, stemPeakAmplitude, CHUNK_CONFIG, computeChunkStarts, chunkAudio, chunkAudioForStems, reconstructFromChunks } from '$lib/module2/waveform.js';
 
 describe('peaks — formes d\'onde des stems (prototype Module 2)', () => {
 	test('retourne la crête absolue de chaque tranche de l\'échantillon', () => {
@@ -23,5 +23,13 @@ describe('peaks — formes d\'onde des stems (prototype Module 2)', () => {
 		const result = peaks(pcm, 20);
 		expect(result[15] / result[5]).toBeCloseTo(3.0, 1);
 		expect(stemPeakAmplitude(result)).toBeGreaterThan(0.48);
+	});
+});
+describe('chunking — pipeline Module 2 (Micro-tâche #1)', () => {
+	test('CHUNK_CONFIG : paramètres par défaut corrects', () => {
+		expect(CHUNK_CONFIG.chunkDurationSec).toBe(8.0);
+		expect(CHUNK_CONFIG.hopDurationSec).toBe(1.0);
+		expect(CHUNK_CONFIG.stemCount).toBe(4);
+		expect(CHUNK_CONFIG.stemNames).toEqual(['vocals', 'drums', 'bass', 'other']);
 	});
 });

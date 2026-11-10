@@ -2,7 +2,7 @@
  * Lecteur audio d'une cassette (Deck A ou B) : lecture / arrêt d'un fichier
  * local via HTMLAudioElement. L'élément audio est injectable pour les tests.
  */
-export function createDeckPlayer({ onPlayingChange = () => {}, onProgress = () => {}, createAudio = () => new Audio() } = {}) {
+export function createDeckPlayer({ onPlayingChange = () => {}, onProgress = () => {}, onTime = () => {}, createAudio = () => new Audio() } = {}) {
   let audio = null;
   let objectUrl = null;
 
@@ -29,9 +29,12 @@ export function createDeckPlayer({ onPlayingChange = () => {}, onProgress = () =
       onProgress(1);
       onPlayingChange(false);
     };
-    // Progression = temps courant / durée : la bande se déplace au rythme du morceau
     audio.ontimeupdate = () => {
-      if (audio.duration > 0) onProgress(audio.currentTime / audio.duration);
+      if (audio.duration > 0) {
+        const ct = audio.currentTime;
+        onProgress(ct / audio.duration);
+        onTime(ct);
+      }
     };
   }
 
@@ -48,6 +51,7 @@ export function createDeckPlayer({ onPlayingChange = () => {}, onProgress = () =
       audio.currentTime = 0;
     }
     onProgress(0);
+    onTime(0);
     onPlayingChange(false);
   }
 

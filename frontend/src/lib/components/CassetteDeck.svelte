@@ -12,6 +12,8 @@
     onStop?: () => void;
     title?: string | null;
     artist?: string | null;
+    currentTime?: number;
+    duration?: number;
   }
 
   let {
@@ -26,7 +28,9 @@
     onPlay,
     onStop,
     title = null,
-    artist = null
+    artist = null,
+    currentTime = 0,
+    duration = 0
   } = $props();
 
   const isLoaded = $derived(file !== null);
@@ -61,6 +65,14 @@
       return (file as File).name.replace(/\.[^/.]+$/, '');
     }
     return String(file).split(/[\\/]/).pop()?.replace(/\.[^/.]+$/, '') || null;
+  });
+
+  const formattedTime = $derived.by(() => {
+    if (!isLoaded) return '--:--';
+    const totalSecs = Math.floor(Math.max(0, currentTime));
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   });
 </script>
 
@@ -208,6 +220,14 @@
               <rect x="-1.5" y="-30" width="3" height="10" fill={hub.edge} />
             </svg>
           </div>
+        </div>
+
+        <!-- Tête de lecture : bloc trapézoïdal argenté -->
+        <div class="absolute" style="left: 50%; top: 82%; width: 8%; height: 5%; transform: translate(-50%, 0); background: linear-gradient(180deg, #B0B8C0, #889098); clip-path: polygon(20% 0%, 80% 0%, 0% 100%, 100% 100%); box-shadow: 0 1px 4px rgba(0,0,0,0.5), inset 0 1px 0 #D5DCE3;"></div>
+
+        <!-- Compteur de bande numérique grand format mm:ss -->
+        <div class="absolute font-mono font-extrabold" style="left: 50%; top: 12%; transform: translate(-50%, 0); background: #0D0E11; padding: 4px 10px; border-radius: 4px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.9), 0 3px 10px rgba(0,0,0,0.6); color: #FFB300; font-size: 14px; letter-spacing: 4px; border: 1px solid #C87D55;">
+          <span data-testid="deck-counter">{formattedTime}</span>
         </div>
       </div>
     </div>

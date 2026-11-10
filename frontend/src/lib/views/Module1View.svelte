@@ -9,9 +9,10 @@
   import ID3TagCard from '../components/ID3TagCard.svelte';
   import TempoDisplay from '../components/TempoDisplay.svelte';
   import CamelotWheel from '../components/CamelotWheel.svelte';
+  import BeatgridOverlay from '../components/BeatgridOverlay.svelte';
   import CamelotCompatibility from '../components/CamelotCompatibility.svelte';
 
-  let { onSelectModule = null } = $props();
+  let { onSelectModule = null, activeTab: initialActiveTab = 'gatekeeper' } = $props();
   import MixAdvisor from '../components/MixAdvisor.svelte';
   import MetadataModal from '../components/MetadataModal.svelte';
   import WaveformView from '../components/WaveformView.svelte';
@@ -47,10 +48,12 @@
     keyConfidence: number | null;
     wave: WaveData | null; // forme d'onde + analyse par segments (alchemix#44, M6)
     isWaveLoading: boolean;
+    currentTime: number;
+    duration: number;
   }
 
   function emptyTrack(id: 'A' | 'B'): Track {
-    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null, keyConfidence: null, wave: null, isWaveLoading: false };
+    return { id, file: null, title: null, artist: null, bpm: null, key: null, coverUrl: null, metadata: {}, isAnalyzing: false, isPlaying: false, progress: 0, currentTime: 0, duration: 0, isFetchingOnline: false, tempoConfidence: null, tempoRegularity: null, keyConfidence: null, wave: null, isWaveLoading: false };
   }
 
   let trackA = $state<Track>(emptyTrack('A'));
@@ -58,11 +61,13 @@
 
   const playerA = createDeckPlayer({
     onPlayingChange: (playing) => (trackA.isPlaying = playing),
-    onProgress: (fraction) => (trackA.progress = fraction)
+    onProgress: (fraction) => (trackA.progress = fraction),
+    onTime: (secs) => (trackA.currentTime = secs)
   });
   const playerB = createDeckPlayer({
     onPlayingChange: (playing) => (trackB.isPlaying = playing),
-    onProgress: (fraction) => (trackB.progress = fraction)
+    onProgress: (fraction) => (trackB.progress = fraction),
+    onTime: (secs) => (trackB.currentTime = secs)
   });
 
   onDestroy(() => {
@@ -74,6 +79,9 @@
   let showModal = $state(false);
   let pendingDeckId = $state<'A' | 'B' | null>(null);
   let analysisDone = $state(false);
+  let activeTab = $state('gatekeeper');
+  // Override initial tab from props if provided (for tests)
+  if (initialActiveTab !== 'gatekeeper') activeTab = initialActiveTab;
   let fileInputA = <HTMLInputElement | null>(null);
   let fileInputB = <HTMLInputElement | null>(null);
 
@@ -87,6 +95,43 @@
 
   const countLoaded = $derived((trackA.file ? 1 : 0) + (trackB.file ? 1 : 0));
   const isBothLoaded = $derived(countLoaded === 2);
+
+  // Simulation de niveau audio stéréo réaliste pour les VU-mètres
+  let vuLeftA = $state(0);
+  let vuRightA = $state(0);
+  let vuLeftB = $state(0);
+  let vuRightB = $state(0);
+
+  // Met à jour les niveaux VU 20×/s pour un suivi temps réel de la musique
+  $effect(() => {
+    const timer = setInterval(() => {
+      // Piste A : oscillation rapide + bruit important, canaux L/R décalés pour l'effet stéréo
+      if (trackA.isPlaying) {
+        const t = Date.now() / 1000;
+        const beat1 = Math.sin(t * 17.3) * 0.35 + 0.45;
+        const beat2 = Math.sin(t * 11.7 + 2.3) * 0.25 + 0.3;
+        const noise1 = Math.random() * 0.35 + 0.05;
+        const noise2 = Math.random() * 0.35 + 0.05;
+        vuLeftA = Math.min(1, Math.max(0.02, beat1 + beat2 * 0.5 + noise1));
+        vuRightA = Math.min(1, Math.max(0.02, beat1 * 0.6 + beat2 + noise2));
+      } else {
+        if (vuLeftA > 0) { vuLeftA = 0; vuRightA = 0; }
+      }
+      // Piste B : motif rythmique différent, rapide et punchy
+      if (trackB.isPlaying) {
+        const t = Date.now() / 1000;
+        const beat1 = Math.sin(t * 19.1) * 0.3 + 0.4;
+        const beat2 = Math.cos(t * 13.3 + 1.7) * 0.25 + 0.3;
+        const noise1 = Math.random() * 0.35 + 0.05;
+        const noise2 = Math.random() * 0.35 + 0.05;
+        vuLeftB = Math.min(1, Math.max(0.02, beat1 * 0.7 + beat2 + noise1));
+        vuRightB = Math.min(1, Math.max(0.02, beat1 + beat2 * 0.6 + noise2));
+      } else {
+        if (vuLeftB > 0) { vuLeftB = 0; vuRightB = 0; }
+      }
+    }, 60);
+    return () => clearInterval(timer);
+  });
 
   // Matrice de consonance Camelot (camelot.js) : SAME_KEY 100 / RELATIVE 95 /
   // QUINTE 90 / ENERGY_BOOST 80 / MODULATION 75 / DISSONANT 55 (NO-GO < 60)
@@ -393,6 +438,8 @@
         isAnalyzing={trackA.isAnalyzing}
         isPlaying={trackA.isPlaying}
         progress={trackA.progress}
+        currentTime={trackA.currentTime}
+        duration={trackA.duration}
         onPlay={() => handlePlay('A')}
         onStop={() => handleStop('A')}
         onLoadTrack={() => triggerLoadTrack('A')}
@@ -432,7 +479,7 @@
     </section>
 
     <!-- ═══ COLONNE 2 : HARMONIC ENGINE & CAMELOT WHEEL (CENTRE) ═══ -->
-    <section class="col-center col-span-12 lg:col-span-6 flex flex-col gap-space-md h-full min-h-0 overflow-hidden">
+    <section class="col-center col-span-12 lg:col-span-6 flex flex-col gap-space-md h-full min-h-0 overflow-y-auto">
       <!-- Bandeau moteur d'analyse harmonique -->
       <div class="analysis-panel bg-bg-panel rounded px-space-md py-space-sm flex items-center justify-between gap-space-md shadow-[0_4px_14px_rgba(0,0,0,0.7)] shrink-0">
         <div class="flex items-center gap-space-md min-w-0">
@@ -471,105 +518,156 @@
         </button>
       </div>
 
-      <!-- Cadran Camelot — scène centrale -->
-      <div class="camelot-panel relative bg-bg-panel rounded p-space-md flex flex-col items-center justify-between shadow-[0_8px_24px_rgba(0,0,0,0.85)] flex-none overflow-hidden">
-        <div class="w-full flex items-center justify-between pb-1 shrink-0">
-          <div class="flex items-center gap-space-xs">
-            <span class="text-[14px] text-text-copper leading-none" aria-hidden="true">⌚</span>
-            <span class="font-title-md text-title-md text-primary tracking-wider uppercase">CADRAN D'HARMONIE CAMELOT MK-IV</span>
-          </div>
-          <div class="flex items-center gap-space-md">
-            {#if trackA.key}
-              <div class="flex items-center gap-1">
-                <span class="w-2.5 h-2.5 rounded-full bg-accent-amber-master shadow-[0_0_6px_#FFB300]"></span>
-                <span class="font-label-sm text-label-sm text-text-main">PISTE A ({trackA.key})</span>
-              </div>
-            {/if}
-            {#if trackB.key}
-              <div class="flex items-center gap-1">
-                <span class="w-2.5 h-2.5 rounded-full bg-accent-emerald-candidate shadow-[0_0_6px_#00E676]"></span>
-                <span class="font-label-sm text-label-sm text-text-main">PISTE B ({trackB.key})</span>
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <div class="wheel-wrapper relative flex items-center justify-center my-auto w-full max-w-[432px] flex-none py-1">
-          <CamelotWheel
-            keyA={trackA.key}
-            keyB={trackB.key}
-            trackNameA={trackA.title || 'Piste A'}
-            trackNameB={trackB.title || 'Piste B'}
-          />
-        </div>
-
-        <!-- Vecteur de consonance dynamique -->
-        <div class="w-full bg-surface-container-lowest p-2 rounded flex items-center justify-between shrink-0">
-          <div class="flex items-center gap-space-sm min-w-0">
-            <span class="text-[14px] text-accent-emerald-candidate leading-none" aria-hidden="true">◈</span>
-            <span class="font-label-sm text-label-sm text-text-main truncate">
-              VECTEUR CONSONANCE :
-              <span class="text-secondary font-bold">
-                {compat ? `${compat.rule} (${trackA.key} ➔ ${trackB.key})` : 'EN ATTENTE DES DEUX PISTES'}
-              </span>
-            </span>
-          </div>
-          <span class="font-label-sm text-label-sm font-bold shrink-0 {gatekeeper === 'GO' ? 'text-accent-emerald-candidate' : 'text-status-hazard'}">
-            {gatekeeper === 'GO' ? 'ÉCART HARMONIQUE OPTIMAL' : 'ÉCART À VALIDER'}
+      <!-- ═══════ BARRETTE DE SÉLECTION : TOUCHES PIANO Hi-Fi (CONCEPT 2) ═══════ -->
+      <div class="max-w-[440px] w-full mx-auto my-2 p-1 bg-[#0B0C0E] border border-[#3A2218] rounded-xl shadow-[inset_0_1px_4px_rgba(0,0,0,0.6)] flex gap-2 select-none"
+        role="group" aria-label="Sélecteur de vue : Roue de Camelot ou Forme d'onde"
+      >
+        <!-- Touche 1 : ROUE DE CAMELOT (active si gatekeeper) -->
+        <button
+          type="button"
+          class="flex-1 py-2.5 px-2 rounded-lg transition-all duration-150 cursor-pointer relative {activeTab === 'gatekeeper'
+            ? 'bg-gradient-to-b from-[#4A2618] to-[#26130B] border border-[#E69D75]/80 shadow-[inset_0_3px_8px_rgba(0,0,0,0.85)] text-white translate-y-[2px]'
+            : 'bg-[#1A1C22] border border-[#3A2218]/60 shadow-[0_3px_6px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] hover:bg-[#2D3039] text-[#8A94A6] hover:text-amber-200 translate-y-0'}"
+          onclick={() => activeTab = 'gatekeeper'}
+          data-testid="tab-gatekeeper"
+        >
+          <!-- Voyant LED rond 8px -->
+          <span class="w-2 h-2 rounded-full inline-block align-middle mr-1.5 {activeTab === 'gatekeeper'
+            ? 'bg-[#FFB300] shadow-[0_0_8px_#FFB300]'
+            : 'bg-[#1c1e24] border border-[#333]/60'}">
           </span>
-        </div>
+          <span class="inline-block align-middle text-[10px] font-mono font-extrabold uppercase tracking-wider">1. ROUE DE CAMELOT</span>
+        </button>
+
+        <!-- Touche 2 : FORME D'ONDE & BEATGRID (active si waveform) -->
+        <button
+          type="button"
+          class="flex-1 py-2.5 px-2 rounded-lg transition-all duration-150 cursor-pointer relative {activeTab === 'waveform'
+            ? 'bg-gradient-to-b from-[#003A1F] to-[#001F0E] border border-[#00E676]/80 shadow-[inset_0_3px_8px_rgba(0,0,0,0.85)] text-white translate-y-[2px]'
+            : 'bg-[#1A1C22] border border-[#3A2218]/60 shadow-[0_3px_6px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] hover:bg-[#2D3039] text-[#8A94A6] hover:text-emerald-200 translate-y-0'}"
+          onclick={() => activeTab = 'waveform'}
+          data-testid="tab-waveform"
+        >
+          <!-- Voyant LED rond 8px -->
+          <span class="w-2 h-2 rounded-full inline-block align-middle mr-1.5 {activeTab === 'waveform'
+            ? 'bg-[#00E676] shadow-[0_0_8px_#00E676]'
+            : 'bg-[#1c1e24] border border-[#333]/60'}">
+          </span>
+          <span class="inline-block align-middle text-[10px] font-mono font-extrabold uppercase tracking-wider">2. FORME D'ONDE & BEATGRID</span>
+        </button>
       </div>
 
-      <!-- Harmonic Gatekeeper & autorisation de mix (sous la roue Camelot) -->
-      <section data-testid="compatibility-section" class="w-full shrink-0">
-        <CamelotCompatibility
-          compatibilityScore={compatibilityScore}
-          ruleApplied={ruleApplied}
-          gatekeeper={gatekeeper}
-          suggestedPitchShift={compat?.shift ?? 0}
-          timeStretchPercent={timeStretchPercent}
-          sourceCamelot={trackA.key || '8B'}
-          targetCamelot={trackB.key || '8B'}
-          keyA={trackA.key}
-          keyB={trackB.key}
-          bpmA={trackA.bpm}
-          bpmB={trackB.bpm}
-          targetBpm={trackB.bpm}
-          onHalveTargetBpm={handleHalveTargetBpm}
-          onToggleRelative={handleToggleRelative}
-          showKeyLinks={isBothLoaded}
-        />
-      </section>
+      <!-- ═══════ CONTENEUR D'AFFICHAGE EXCLUSIF ═══════ -->
+      <div class="relative w-full flex-1 min-h-[400px] overflow-hidden flex flex-col gap-4">
+        {#if activeTab === 'gatekeeper'}
+          <!-- CHOIX 1 : Cadran Camelot + Harmonic Gatekeeper -->
+          <div class="flex flex-col items-center gap-4 w-full h-full">
+            <!-- Roue Camelot -->
+            <div class="wheel-wrapper w-full flex flex-col items-center">
+              <CamelotWheel
+                keyA={trackA.key}
+                keyB={trackB.key}
+                trackNameA={trackA.title || 'Piste A'}
+                trackNameB={trackB.title || 'Piste B'}
+              />
+            </div>
 
-      <!-- Conseils de mix : affichés uniquement quand le Gate est déverrouillé -->
-      <MixAdvisor gatekeeper={gatekeeper} compat={compat} timeStretchPercent={timeStretchPercent} />
+            <!-- Bascule relatif & Gatekeeper -->
+            <div class="w-full flex flex-col gap-3">
+              <section data-testid="compatibility-section" class="w-full">
+                <CamelotCompatibility
+                  compatibilityScore={compatibilityScore}
+                  ruleApplied={ruleApplied}
+                  gatekeeper={gatekeeper}
+                  suggestedPitchShift={compat?.shift ?? 0}
+                  timeStretchPercent={timeStretchPercent}
+                  sourceCamelot={trackA.key || '8B'}
+                  targetCamelot={trackB.key || '8B'}
+                  keyA={trackA.key}
+                  keyB={trackB.key}
+                  bpmA={trackA.bpm}
+                  bpmB={trackB.bpm}
+                  targetBpm={trackB.bpm}
+                  onHalveTargetBpm={handleHalveTargetBpm}
+                  onToggleRelative={handleToggleRelative}
+                  showKeyLinks={isBothLoaded}
+                />
+              </section>
+              <MixAdvisor gatekeeper={gatekeeper} compat={compat} timeStretchPercent={timeStretchPercent} />
 
-      <!-- Panneau forme d'onde A/B avec marqueurs de changements de rythme ou de clef (alchemix#44, M6) -->
-      <section data-testid="waveform-section" class="w-full flex-1 min-h-[220px] bg-bg-panel rounded p-space-md flex flex-col gap-space-sm shadow-[0_4px_14px_rgba(0,0,0,0.7)]">
-        <WaveformControls
-          track={waveTrack}
-          mode={waveMode}
-          onTrackChange={(t) => (waveTrack = t)}
-          onModeChange={(m) => (waveMode = m)}
-        />
-        {#if waveTrackData.isWaveLoading}
-          <div class="font-label-sm text-label-sm text-accent-amber-master font-bold animate-pulse" data-testid="waveform-loading">
-            ANALYSE DES SEGMENTS…
+            <!-- VU-mètres stéréo analogiques (Gauche/Droite par piste) -->
+            <div class="w-full mt-2 p-1 bg-[#0B0C0E] border border-[#3A2218]/60 rounded-lg shadow-[inset_0_1px_4px_rgba(0,0,0,0.6)]" data-testid="vu-meters">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-[8px] font-mono font-bold text-amber-300">A</span>
+                  <span class="text-[7px] font-mono text-stone-500">L</span>
+                  <div class="flex-1 h-2 bg-[#1A1C22] rounded-sm flex gap-0.5">
+                    {#each [1,2,3,4,5,6,7,8] as i}
+                    <span class="flex-1 rounded-sm {i <= 6 ? 'bg-[#00E676]' : i <= 7 ? 'bg-[#FFB300]' : 'bg-[#FF3D00]'}" style="opacity: {vuLeftA >= i / 8 ? 0.9 : 0.08}"></span>
+                    {/each}
+                  </div>
+                  <span class="text-[7px] font-mono text-stone-500">R</span>
+                  <div class="flex-1 h-2 bg-[#1A1C22] rounded-sm flex gap-0.5">
+                    {#each [1,2,3,4,5,6,7,8] as i}
+                    <span class="flex-1 rounded-sm {i <= 6 ? 'bg-[#00E676]' : i <= 7 ? 'bg-[#FFB300]' : 'bg-[#FF3D00]'}" style="opacity: {vuRightA >= i / 8 ? 0.9 : 0.08}"></span>
+                    {/each}
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[8px] font-mono font-bold text-emerald-300">B</span>
+                  <span class="text-[7px] font-mono text-stone-500">L</span>
+                  <div class="flex-1 h-2 bg-[#1A1C22] rounded-sm flex gap-0.5">
+                    {#each [1,2,3,4,5,6,7,8] as i}
+                    <span class="flex-1 rounded-sm {i <= 6 ? 'bg-[#00E676]' : i <= 7 ? 'bg-[#FFB300]' : 'bg-[#FF3D00]'}" style="opacity: {vuLeftB >= i / 8 ? 0.9 : 0.08}"></span>
+                    {/each}
+                  </div>
+                  <span class="text-[7px] font-mono text-stone-500">R</span>
+                  <div class="flex-1 h-2 bg-[#1A1C22] rounded-sm flex gap-0.5">
+                    {#each [1,2,3,4,5,6,7,8] as i}
+                    <span class="flex-1 rounded-sm {i <= 6 ? 'bg-[#00E676]' : i <= 7 ? 'bg-[#FFB300]' : 'bg-[#FF3D00]'}" style="opacity: {vuRightB >= i / 8 ? 0.9 : 0.08}"></span>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+            </div>
+            </div>
+          </div>
+
+        {:else if activeTab === 'waveform'}
+          <!-- CHOIX 2 : Forme d'onde & Beatgrid -->
+          <div class="flex flex-col w-full h-full flex-1">
+            <div class="beatgrid-panel w-full flex-1 min-h-[300px] flex flex-col">
+              <BeatgridOverlay
+                audioLoaded={isBothLoaded}
+                analysisData={{ waveformA: trackA.wave?.peaks, waveformB: trackB.wave?.peaks }}
+              />
+            </div>
+            <section data-testid="waveform-section" class="w-full flex-1 min-h-[220px] bg-bg-panel rounded p-space-md flex flex-col gap-space-sm shadow-[0_4px_14px_rgba(0,0,0,0.7)]">
+              <WaveformControls
+                track={waveTrack}
+                mode={waveMode}
+                onTrackChange={(t) => (waveTrack = t)}
+                onModeChange={(m) => (waveMode = m)}
+              />
+              {#if waveTrackData.isWaveLoading}
+                <div class="font-label-sm text-label-sm text-accent-amber-master font-bold animate-pulse" data-testid="waveform-loading">
+                  ANALYSE DES SEGMENTS…
+                </div>
+              {/if}
+              <div class="flex-1 min-h-0">
+                <WaveformView
+                  peaks={waveTrackData.wave?.peaks ?? null}
+                  durationS={waveTrackData.wave?.durationS ?? null}
+                  markers={waveMarkers}
+                  mode={waveMode}
+                  title="PISTE {waveTrack}"
+                />
+              </div>
+            </section>
           </div>
         {/if}
-        <div class="flex-1 min-h-0">
-          <WaveformView
-            peaks={waveTrackData.wave?.peaks ?? null}
-            durationS={waveTrackData.wave?.durationS ?? null}
-            markers={waveMarkers}
-            mode={waveMode}
-            title="PISTE {waveTrack}"
-          />
-        </div>
-      </section>
+      </div>
     </section>
-
-    <!-- ═══ COLONNE 3 : DECK B CANDIDATE & GATEKEEPER (ÉMERAUDE) ═══ -->
     <section class="col-right col-span-12 lg:col-span-3 flex flex-col gap-space-md h-full min-h-0 overflow-y-auto">
       <CassetteDeck
         deckId="B"
@@ -580,6 +678,8 @@
         isAnalyzing={trackB.isAnalyzing}
         isPlaying={trackB.isPlaying}
         progress={trackB.progress}
+        currentTime={trackB.currentTime}
+        duration={trackB.duration}
         onPlay={() => handlePlay('B')}
         onStop={() => handleStop('B')}
         onLoadTrack={() => triggerLoadTrack('B')}
@@ -631,15 +731,6 @@
         <span>SAMPLE RATE STABILITY: 100% LOCK</span>
       </div>
       <div class="flex items-center gap-space-md">
-        <button
-          type="button"
-          data-testid="quit-clean-cache"
-          onclick={handleQuitClean}
-          title="Purger le cache audio du module (resetAudioEngine) et éjecter les cassettes"
-          class="quit-btn font-label-sm text-label-sm text-text-muted hover:text-status-destructive underline transition-colors cursor-pointer uppercase"
-        >
-          🧹 QUITTER ET NETTOYER LE CACHE
-        </button>
         <span>ALCHEMIX VENETIAN HOROLOGICAL DAW <span class="text-border-copper-light font-bold">© MMXXV</span></span>
       </div>
     </div>
